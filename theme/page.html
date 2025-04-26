@@ -1,0 +1,8 @@
+
+{% extends 'base.html' %}
+{% block content %}
+<article class='prose dark:prose-invert max-w-none'>
+  <h1>{{ page.meta.title }}</h1>
+  {{ page.html | safe }}
+</article>
+{% endblock %}

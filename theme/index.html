@@ -1,0 +1,14 @@
+
+{% extends 'base.html' %}
+{% block content %}
+{% if site.description %}<p class='mb-8 text-xl text-gray-600 dark:text-gray-300'>{{ site.description }}</p>{% endif %}
+<div class='space-y-8'>
+  {% for p in posts %}
+    <article class='group border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-sm transition'>
+      <h2 class='text-2xl font-semibold'><a href='{{ p.url }}' class='group-hover:underline'>{{ p.meta.title }}</a></h2>
+      <p class='text-sm text-gray-500 dark:text-gray-400'>{{ p.meta.date }}</p>
+      <p class='mt-2 leading-relaxed'>{{ p.excerpt }}</p>
+    </article>
+  {% endfor %}
+</div>
+{% endblock %}

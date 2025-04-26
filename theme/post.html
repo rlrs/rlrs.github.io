@@ -1,0 +1,42 @@
+
+{% extends 'base.html' %}
+{% block content %}
+<article class='prose dark:prose-invert max-w-none'>
+  <h1>{{ page.meta.title }}</h1>
+  <p class='text-sm text-gray-500 dark:text-gray-400'>{{ page.meta.date }}</p>
+  {{ page.html | safe }}
+  {% if page.meta.tags %}
+  <p class='mt-8'>
+    {% for t in page.meta.tags %}<a class='mr-2 text-blue-600 dark:text-blue-400' href='/blog/tags/{{ t }}.html'>#{{ t }}</a>{% endfor %}
+  </p>
+  {% endif %}
+</article>
+<!-- Floating TOC -->
+<nav id='toc' class='hidden xl:block fixed right-8 top-32 w-60 border-l border-gray-200 dark:border-gray-700 pl-4 text-sm space-y-1'></nav>
+<script>
+  document.addEventListener('DOMContentLoaded',()=>{
+    const article=document.querySelector('article');
+    const toc=document.getElementById('toc');
+    if(!article||!toc)return;
+    const hs=[...article.querySelectorAll('h2,h3')];
+    hs.forEach(h=>{
+      let id=h.id||h.textContent.trim().toLowerCase().replace(/\s+/g,'-');
+      h.id=id;
+      const a=document.createElement('a');
+      a.href='#'+id;
+      a.textContent=h.textContent;
+      a.className='block py-1 text-gray-600 dark:text-gray-400 hover:text-blue-600';
+      toc.appendChild(a);
+    });
+    const links=[...toc.querySelectorAll('a')];
+    const spy=()=>{
+      let cur=-1;
+      hs.forEach((h,i)=>{if(h.getBoundingClientRect().top<=80)cur=i;});
+      links.forEach((l,i)=>l.classList.toggle('text-blue-600',i===cur));
+    };
+    spy();
+    window.addEventListener('scroll',spy);
+    toc.classList.remove('hidden');
+  });
+</script>
+{% endblock %}

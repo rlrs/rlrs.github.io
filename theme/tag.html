@@ -1,0 +1,10 @@
+
+{% extends 'base.html' %}
+{% block content %}
+<h1 class='text-3xl font-bold mb-4'>#{{ tag }}</h1>
+<ul class='space-y-2'>
+  {% for p in pages %}
+    <li><a class='text-blue-600 dark:text-blue-400 hover:underline' href='{{ p.url }}'>{{ p.meta.title }}</a> <small class='text-gray-500 dark:text-gray-400'>{{ p.meta.date }}</small></li>
+  {% endfor %}
+</ul>
+{% endblock %}
