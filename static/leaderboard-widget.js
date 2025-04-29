@@ -22,7 +22,7 @@ class LeaderboardWidget extends HTMLElement {
         .dark .noUi-tooltip::after{border-color:#2563eb transparent transparent transparent}
       </style>
       <div class="leaderboard-container mx-auto max-w-6xl text-gray-900 dark:text-gray-200">
-        <p class="text-lg mb-4">Model compression performance across different datasets. <span class="font-medium">Lower is better.</span></p>
+        <p class="text-lg mb-4">Model compression rate (%) across different datasets. <span class="font-medium">Lower is better. </span>See also the corresponding <a href="/blog/leaderboard.html">blog post</a>.</p>
 
         <!-- Controls row -->
         <div class="filter-controls bg-gray-100 dark:bg-gray-800 rounded-lg p-6 mb-6">
