@@ -1,0 +1,99 @@
+
+
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <title>Base Model Leaderboard · Rasmus&#39; Stuff</title>
+  <link rel='stylesheet' href='/pygments.css'>
+  <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css'>
+  <script src='https://cdn.tailwindcss.com?plugins=typography'></script>
+  <script>
+    window.tailwind.config = {
+      darkMode: 'class'
+    };</script>
+  <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js'></script>
+  <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js' onload='renderMathInElement(document.body)'></script>
+  <style>
+    .cite{
+      position:relative;
+      display:inline-block;
+      color:#0070f3;
+      text-decoration:none
+    }
+    .cite::after{
+      content:attr(data-ref);
+      position:absolute;
+      width: 20rem;
+      top:100%;
+      background:#fff;
+      border:1px solid #ddd;
+      padding:.25rem .5rem;
+      font-size:.75rem;
+      white-space: pre-wrap;
+      box-shadow:0 2px 4px rgba(0,0,0,.1);
+      opacity:0;
+      transform: translateY(.5rem);
+      transition:opacity .1s ease,transform .1s ease;
+      color:#111;
+      pointer-events:none;
+      z-index: 30;
+    }
+    .cite:hover::after,.cite:focus-visible::after{
+      opacity:1;
+      transform:translateY(0);
+      pointer-events:auto
+    }
+    .prose h2,.prose h3{scroll-margin-top:5.5rem}
+    html, body { overflow-x: hidden; }
+  </style>
+  <script>
+    // theme toggle
+    (()=>{const k='theme';function set(t){document.documentElement.classList[t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'add':'remove']('dark');}
+      let pref=localStorage.getItem(k)||'system';set(pref);
+      window.toggleTheme=()=>{pref=document.documentElement.classList.contains('dark')?'light':'dark';localStorage.setItem(k,pref);set(pref)};})();
+    // KaTeX auto‑render with inline "$" support
+    document.addEventListener('DOMContentLoaded',()=>{
+      if(typeof renderMathInElement==='function'){
+        renderMathInElement(document.body,{
+          delimiters:[
+            {left:'$$', right:'$$', display:true},
+            {left:'$', right:'$', display:false}
+          ],
+          throwOnError:false
+        });
+      }
+    });
+  </script>
+</head>
+<body class='min-h-screen bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-200'>
+  <!-- Top navigation bar -->
+  <header class='sticky top-0 z-30 w-full backdrop-blur bg-white/80 dark:bg-gray-900/80 border-b border-gray-200 dark:border-gray-700'>
+    <div class='mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-14 items-center justify-between'>
+      <a href='/' class='text-lg font-semibold whitespace-nowrap'>Rasmus&#39; Stuff</a>
+      <nav class='hidden md:flex space-x-6'>
+        
+          <a href='/leaderboard.html' class='hover:underline'>Base Model Leaderboard</a>
+        
+        <a href='/blog/' class='hover:underline'>Blog</a>
+      </nav>
+      <button aria-label='Toggle theme' onclick='toggleTheme()' class='text-xl'>🌗</button>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-5xl p-6">
+    
+<article class='prose dark:prose-invert max-w-none'>
+  <h1>Base Model Leaderboard</h1>
+  <script type="module" src="/static/leaderboard-widget.js"></script>
+<p><leaderboard-widget></leaderboard-widget></p>
+<p>See also the corresponding <a href="/blog/leaderboard.html">blog post</a>.</p>
+
+</article>
+
+  </main>
+
+  <footer class='mx-auto max-w-4xl pb-10 px-6 text-center text-sm text-gray-500 dark:text-gray-400'>© 2025 Rasmus Larsen. All text is <a href='https://creativecommons.org/licenses/by-sa/4.0/'>CC-BY-SA 4.0</a>.</footer>
+</body>
+</html>

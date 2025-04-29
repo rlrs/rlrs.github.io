@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+            <rss version='2.0'><channel>
+              <title>Rasmus' Stuff</title>
+              <link>https://rlrs.dk</link>
+              <description></description>
+
+<item>
+  <title>Quantifying LLM Base Model Quality through Compression</title>
+  <link>https://rlrs.dk/blog/leaderboard.html</link>
+  <pubDate>2025‑04‑29</pubDate>
+  <description><![CDATA[Introduces a Danish-centric benchmark and leaderboard that grades base LLMs by compression efficiency on fresh Danish, English and Python text.]]></description>
+</item>
+            </channel></rss>

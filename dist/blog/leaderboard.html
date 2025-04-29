@@ -1,0 +1,252 @@
+
+
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <title>Quantifying LLM Base Model Quality through Compression · Rasmus&#39; Stuff</title>
+  <link rel='stylesheet' href='/pygments.css'>
+  <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css'>
+  <script src='https://cdn.tailwindcss.com?plugins=typography'></script>
+  <script>
+    window.tailwind.config = {
+      darkMode: 'class'
+    };</script>
+  <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js'></script>
+  <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js' onload='renderMathInElement(document.body)'></script>
+  <style>
+    .cite{
+      position:relative;
+      display:inline-block;
+      color:#0070f3;
+      text-decoration:none
+    }
+    .cite::after{
+      content:attr(data-ref);
+      position:absolute;
+      width: 20rem;
+      top:100%;
+      background:#fff;
+      border:1px solid #ddd;
+      padding:.25rem .5rem;
+      font-size:.75rem;
+      white-space: pre-wrap;
+      box-shadow:0 2px 4px rgba(0,0,0,.1);
+      opacity:0;
+      transform: translateY(.5rem);
+      transition:opacity .1s ease,transform .1s ease;
+      color:#111;
+      pointer-events:none;
+      z-index: 30;
+    }
+    .cite:hover::after,.cite:focus-visible::after{
+      opacity:1;
+      transform:translateY(0);
+      pointer-events:auto
+    }
+    .prose h2,.prose h3{scroll-margin-top:5.5rem}
+    html, body { overflow-x: hidden; }
+  </style>
+  <script>
+    // theme toggle
+    (()=>{const k='theme';function set(t){document.documentElement.classList[t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'add':'remove']('dark');}
+      let pref=localStorage.getItem(k)||'system';set(pref);
+      window.toggleTheme=()=>{pref=document.documentElement.classList.contains('dark')?'light':'dark';localStorage.setItem(k,pref);set(pref)};})();
+    // KaTeX auto‑render with inline "$" support
+    document.addEventListener('DOMContentLoaded',()=>{
+      if(typeof renderMathInElement==='function'){
+        renderMathInElement(document.body,{
+          delimiters:[
+            {left:'$$', right:'$$', display:true},
+            {left:'$', right:'$', display:false}
+          ],
+          throwOnError:false
+        });
+      }
+    });
+  </script>
+</head>
+<body class='min-h-screen bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-200'>
+  <!-- Top navigation bar -->
+  <header class='sticky top-0 z-30 w-full backdrop-blur bg-white/80 dark:bg-gray-900/80 border-b border-gray-200 dark:border-gray-700'>
+    <div class='mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-14 items-center justify-between'>
+      <a href='/' class='text-lg font-semibold whitespace-nowrap'>Rasmus&#39; Stuff</a>
+      <nav class='hidden md:flex space-x-6'>
+        
+          <a href='/leaderboard.html' class='hover:underline'>Base Model Leaderboard</a>
+        
+        <a href='/blog/' class='hover:underline'>Blog</a>
+      </nav>
+      <button aria-label='Toggle theme' onclick='toggleTheme()' class='text-xl'>🌗</button>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl p-6">
+    
+<article class='prose dark:prose-invert max-w-prose'>
+  <h1>Quantifying LLM Base Model Quality through Compression</h1>
+  <p class='text-sm text-gray-500 dark:text-gray-400'>2025‑04‑29</p>
+  <p><strong>TL;DR:</strong> I introduce a Danish-centric benchmark and public <a href="/leaderboard.html">leaderboard</a> that scores base LLMs by how well they compress unseen Danish, English, and Python text (lower = better) - an information-theoretic lens on predictive power that avoids most training-data contamination. On this metric, models as small as <code>munin-7b-alpha</code> rival or beat much larger baselines, several European models are in the game, and Gemma 3 tops the board.</p>
+<hr />
+<h2>Leaderboard Snapshot</h2>
+<p>If you just want the scores, here are the some of the more interesting ones taken from the full <a href="/leaderboard.html">leaderboard</a>. Please visit it for interactivity and to see all the results.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align:right">Danish Fiction</th>
+<th style="text-align:right">Danish Non-fiction</th>
+<th style="text-align:right">Danish Wiki 2025</th>
+<th style="text-align:right">Danish News 2025</th>
+<th style="text-align:right">English Wiki 2025</th>
+<th style="text-align:right">Python 2025</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>gemma-3-27b-pt</strong></td>
+<td style="text-align:right">12.69</td>
+<td style="text-align:right">11.31</td>
+<td style="text-align:right">8.64</td>
+<td style="text-align:right">8.55</td>
+<td style="text-align:right">7.29</td>
+<td style="text-align:right">4.00</td>
+</tr>
+<tr>
+<td><strong>Meta-Llama-3.1-70B-FP8-Dynamic</strong></td>
+<td style="text-align:right">12.72</td>
+<td style="text-align:right">10.98</td>
+<td style="text-align:right">8.78</td>
+<td style="text-align:right">9.36</td>
+<td style="text-align:right">7.01</td>
+<td style="text-align:right">3.92</td>
+</tr>
+<tr>
+<td><strong>EuroLLM-9B</strong></td>
+<td style="text-align:right">13.59</td>
+<td style="text-align:right">12.07</td>
+<td style="text-align:right">9.32</td>
+<td style="text-align:right">9.53</td>
+<td style="text-align:right">8.12</td>
+<td style="text-align:right">5.35</td>
+</tr>
+<tr>
+<td><strong>munin-7b-alpha</strong></td>
+<td style="text-align:right">13.01</td>
+<td style="text-align:right">12.42</td>
+<td style="text-align:right">9.88</td>
+<td style="text-align:right">9.47</td>
+<td style="text-align:right">8.37</td>
+<td style="text-align:right">5.30</td>
+</tr>
+<tr>
+<td><strong>Mistral-Small-24B-Base-2501</strong></td>
+<td style="text-align:right">14.71</td>
+<td style="text-align:right">12.59</td>
+<td style="text-align:right">9.75</td>
+<td style="text-align:right">10.42</td>
+<td style="text-align:right">7.48</td>
+<td style="text-align:right">4.05</td>
+</tr>
+<tr>
+<td><strong>Qwen3-30B-A3B-Base</strong></td>
+<td style="text-align:right">14.48</td>
+<td style="text-align:right">13.43</td>
+<td style="text-align:right">10.96</td>
+<td style="text-align:right">10.79</td>
+<td style="text-align:right">7.91</td>
+<td style="text-align:right">3.47</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Metric</strong> = <code>compressed_bytes / original_bytes * 100</code>, so lower is better.</p>
+<h2>How to interpret the results</h2>
+<p>The benchmark provides a specific, information-theoretically grounded perspective on base model quality, with a specific focus on generalization to unseen Danish data. In order to interpret the results well, a few things should be made clear.</p>
+<p>First, do not overindex on the 'average' column - it's mainly there for you to sort by. In fact, it's just a naive mean over the other columns with no thought put into their weightings. Also, do not compare scores across columns. Each dataset is quite different, and so compresses differently. You should instead compare across models within each column, to see which models perform best at compressing the given dataset. This hopefully tells you something meaningful about the models relative performance.</p>
+<p>For example, you can see that the Gemma models are all very impressive across the board. Many of the Nordic and European models are actually quite good at Danish, but worse at English and Python. We might infer that Mistral seem to have focused more on English and code than European languages. The Qwen models have very impressive code performance, but lag behind on both Danish and English. Munin-7b-alpha, which we released in January 2024, is still one of the best-performing models for Danish, despite being based on the now old Mistral-7b-v0.1.</p>
+<h2>Why is this interesting?</h2>
+<p>I needed a quick, contamination-proof signal to guide pre-training experiments at <a href="https://foundationmodels.dk">Danish Foundation Models</a>. The loss, or compression rate, is quick and easy to calculate, and since the text we measure it on is newer than any text the models have been trained on, there's a pretty low risk of contamination. As I will explain below, the compression rate is correlated with downstream task performance, and probably also with overall model intelligence, as long as we measure on representative data.</p>
+<p>Since I was going to build this anyways, I figured it makes sense to publish it for your (potential) enjoyment. This is the only benchmark of its kind in Danish, to my knowledge. Of course, there's also <a href="https://euroeval.com/leaderboards/">EuroEval</a> (formerly ScandEval) if you want to know which models are good at Danish. While useful, I believe existing task-specific evaluations are significantly less general than what we measure here. They are also significantly easier to intentionally or unintentionally hillclimb, and all of the benchmarks are extremely likely to already be in training sets. Nonetheless, to the extent that you care about specific skills tested in such benchmarks, <em>and</em> you believe the models are not overfit to the benchmarks, they might still have their uses. Empirically, we do see many of the best (human-preferred) models topping the EuroEval leaderboards. This benchmark is complementary and focused on base models only.</p>
+<h2>Methodology</h2>
+<p><strong>Corpus:</strong> Finding novel text in a relatively low-resource language such as Danish is a challenge, especially for model training. For this benchmark, however, we have the luxury of being able to use copyrighted data with no concern due to the EU DSM Article 3. Hence, I gathered four novel text sources published solely after January 1 2025: Online news articles in Danish, Wikipedia articles in Danish and English, and Github repositories containing Python code. These represent the online-available sources of the dataset, and so it's very important that they're strictly newer than the model training cutoff date. For text that generally isn't available online, I find it less important to consider the publication date. Hence, I use Danish e-books from my personal collection, including both older and newer fiction, and some relatively new non-fiction. These texts are not easily available online (certainly not legally), and so it is less likely that models have been trained on them. While they <em>are</em> available through sources like Anna's Archive, my guess is that existing models are more likely to include only English subsets. Note that the evaluation corpus will <em>not</em> be publicly available; you won't be able to compare your own models with my scores. Feel free to build your own corpus.</p>
+<p><strong>Evaluation pipeline:</strong> <code>raw text chunks -&gt; tokenizer -&gt; log probs -&gt; entropy code-length -&gt; compression rate</code>. The expression for the compression rate for a sequence $x_{1:N}$ is $C = \frac{S_{nats}}{8 B \ln(2)} \cdot 100$ where $S_{nats} = -\sum_{i}^N\ln p_\theta(x_i | x_{\lt i})$ is the negative log-probabilities summed in units of nats, and $B$ is the number of bytes in the sequence. I use compression rate because it feels more intuitive than other options, such as perplexity or bits-per-byte; everyone can relate to “If I encode the text with the model, the size shrinks to $C\%$.” The tokenizer, which by itself is a compressor, is treated as part of the system and we measure the end-to-end compression. One choice that must be made is the sequence length $N$, and currently I've chosen fixed chunks of 1024 tokens. It could be useful to compare e.g. with a much higher value of $N$. Finally, the compression rate is calculated <em>per-dataset</em>. This reveals interesting things about model performance and gives insights into what data the models plausibly have been trained on.</p>
+<h2>Compression ↔ Prediction ↔? Intelligence</h2>
+<p>So, the link between compression and prediction is well-known and I won't bore you, my dear reader, with it. Of course you have read Shannon <a class="cite" data-ref="Shannon, C. E. (1948) A mathematical theory of communication." href="#ref-shannon1948mathematical">[1]</a> saying that optimal compression = optimal prediction. However, is prediction really intelligence? And is that really what we're measuring? Let's investigate a bit.</p>
+<p>Marcus Hutter and Shane Legg have explored &quot;universal intelligence&quot; <a class="cite" data-ref="Legg, S., Hutter, M. (2007) Universal Intelligence: A Definition of Machine Intelligence." href="#ref-legg2007universal">[2]</a> for many years, and they have also collected various definitions of intelligence <a class="cite" data-ref="Legg, S., Hutter, M. (2007) A Collection of Definitions of Intelligence." href="#ref-legg2007collection">[3]</a>. The universal intelligence of an agent is formalised as the weighted average of the total reward that the agent can obtain in every computable, reward-summable environment. This theory exactly relates better prediction to greater intelligence, but it also purposefully goes beyond mere passive prediction. We're getting somewhere, but it's very theoretical and not a perfect fit for LLMs.</p>
+<p>Schmidhuber has of course also worked a lot on compression and agents, for example by relating compression to curiosity <a class="cite" data-ref="Schmidhuber, J. (2009) Driven by Compression Progress: A Simple Principle Explains Essential Aspects of Subjective Beauty, Novelty, Surprise, Interestingness, Attention, Curiosity, Creativity, Art, Science, Music, Jokes." href="#ref-schmidhuber2009driven">[4]</a> and for starting what later became the <a href="http://prize.hutter1.net/">Hutter prize</a>. However, it doesn't seem to me like compressing some old English Wikipedia dump will result in AGI.</p>
+<p>Perhaps we should look at newer results that are more specifically concerned with LLMs. Huang et al. <a class="cite" data-ref="Huang, Y., Zhang, J. et al. (2024) Compression Represents Intelligence Linearly." href="#ref-huang2024compression">[5]</a> showed correlation between loss and downstream zero-shot benchmarks performance. While I disagree with the framing of average benchmark scores as intelligence, this is still a useful result for us. I would like if my models have better downstream benchmark scores, thank you.
+Delétang et al. <a class="cite" data-ref="Delétang, G., Ruoss, A. et al. (2024) Language Modeling Is Compression." href="#ref-deletang2024language">[6]</a> use LLMs as compressors by actually performing arithmetic coding, and compress various data modalities besides text, such as images and audio. Surprisingly, LLMs are good at compressing these modalities, despite never being trained on them.</p>
+<p>There's also this idea of &quot;emergent abilities&quot;; that LLMs &quot;suddenly&quot; during training gain certain abilities. While this framing has been questioned from various angles, Du et al. <a class="cite" data-ref="Du, Z., Zeng, A. et al. (2025) Understanding Emergent Abilities of Language Models from the Loss Perspective." href="#ref-du2025understanding">[7]</a> study it through training loss. They find that downstream abilities are predicted by the pre-training loss regardless of model size and training compute. Furthermore, certain downstream evals have emergent properties where performance is essentially random until pre-training loss drops below a <em>shared</em> threshold, after which rapid improvement is observed.
+Very similarly, Gadre et al. <a class="cite" data-ref="Gadre, S. Y., Smyrnis, G. et al. (2024) Language models scale reliably with over-training and on downstream tasks." href="#ref-gadre2024scale">[8]</a> find that validation loss predicts downstream top-1 error across models.</p>
+<p>To sum up, we have a lot of things pointing suggestively at the link between what we're measuring and intelligence, but there are unfortunately plenty of caveats. For example, not all tokens are equally important to predict <a class="cite" data-ref="Fang, L., Wang, Y. et al. (2025) What is Wrong with Perplexity for Long-context Language Modeling?." href="#ref-fang2025wrong">[9]</a>, and models that are good at next-token prediction are not always good at in-context learning <a class="cite" data-ref="Shin, S., Lee, S. et al. (2022) On the Effect of Pretraining Corpora on In-context Learning by a Large-scale Language Model." href="#ref-shin2022effect">[10]</a>. Prediction, and thus compression, is a necessary but not sufficient condition for intelligence; the same loss can likely be achieved by very different internal representations, and only some support generalization and reasoning. This benchmark is useful for selecting for better, smarter base models, but we will continue using downstream task evaluations for things we actually care about, and for post-trained models.</p>
+<p>Please visit the <a href="/leaderboard.html">leaderboard</a>! I welcome constructive feedback on methodology, results, or potential improvements. I bet there's a lot of things that could be done in the future, or could've been done better already. You can contact me at <a href="mailto:rasmus.larsen@alexandra.dk">rasmus.larsen@alexandra.dk</a> or <strong>@synquid</strong> on Discord.</p>
+<p>Shout out to <a href="https://huggingface.co/spaces/Jellyfish042/UncheatableEval">Jellyfish042/UncheatableEval</a> which inspired the use of new online data for benchmarking.</p>
+<h2 id='references'>References</h2><ol class='references'><li id="ref-shannon1948mathematical">Shannon, C. E. (1948). A mathematical theory of communication. The Bell system technical journal</li><li id="ref-legg2007universal">Legg, S., & Hutter, M. (2007). <a href="https://arxiv.org/abs/0712.3329">Universal Intelligence: A Definition of Machine Intelligence.</a></li><li id="ref-legg2007collection">Legg, S., & Hutter, M. (2007). <a href="https://arxiv.org/abs/0706.3639">A Collection of Definitions of Intelligence.</a></li><li id="ref-schmidhuber2009driven">Schmidhuber, J. (2009). <a href="https://arxiv.org/abs/0812.4360">Driven by Compression Progress: A Simple Principle Explains Essential Aspects of Subjective Beauty, Novelty, Surprise, Interestingness, Attention, Curiosity, Creativity, Art, Science, Music, Jokes.</a></li><li id="ref-huang2024compression">Huang, Y., Zhang, J., Shan, Z., & He, J. (2024). <a href="https://arxiv.org/abs/2404.09937">Compression Represents Intelligence Linearly.</a></li><li id="ref-deletang2024language">Delétang, G., Ruoss, A., Duquenne, P., Catt, E., Genewein, T., Mattern, C., Grau-Moya, J., Wenliang, L. K., Aitchison, M., Orseau, L., Hutter, M., & Veness, J. (2024). <a href="https://arxiv.org/abs/2309.10668">Language Modeling Is Compression.</a></li><li id="ref-du2025understanding">Du, Z., Zeng, A., Dong, Y., & Tang, J. (2025). <a href="https://arxiv.org/abs/2403.15796">Understanding Emergent Abilities of Language Models from the Loss Perspective.</a></li><li id="ref-gadre2024scale">Gadre, S. Y., Smyrnis, G., Shankar, V., Gururangan, S., Wortsman, M., Shao, R., Mercat, J., Fang, A., Li, J., Keh, S., Xin, R., Nezhurina, M., Vasiljevic, I., Jitsev, J., Soldaini, L., Dimakis, A. G., Ilharco, G., Koh, P. W., Song, S., Kollar, T., Carmon, Y., Dave, A., Heckel, R., Muennighoff, N., & Schmidt, L. (2024). <a href="https://arxiv.org/abs/2403.08540">Language models scale reliably with over-training and on downstream tasks.</a></li><li id="ref-fang2025wrong">Fang, L., Wang, Y., Liu, Z., Zhang, C., Jegelka, S., Gao, J., Ding, B., & Wang, Y. (2025). <a href="https://arxiv.org/abs/2410.23771">What is Wrong with Perplexity for Long-context Language Modeling?.</a></li><li id="ref-shin2022effect">Shin, S., Lee, S., Ahn, H., Kim, S., Kim, H., Kim, B., Cho, K., Lee, G., Park, W., Ha, J., & Sung, N. (2022). <a href="https://arxiv.org/abs/2204.13509">On the Effect of Pretraining Corpora on In-context Learning by a Large-scale Language Model.</a></li></ol>
+  
+</article>
+<!-- Floating TOC -->
+<nav id='toc' class='hidden xl:block fixed right-8 top-32 w-60 border-l border-gray-200 dark:border-gray-700 pl-4 text-sm space-y-1'></nav>
+<script>
+  document.addEventListener('DOMContentLoaded',()=>{
+    const article=document.querySelector('article');
+    const toc=document.getElementById('toc');
+    if(!article||!toc) return;
+
+    // Grab headings (h2 & h3) and build TOC entries
+    const hs=[...article.querySelectorAll('h2,h3')];
+
+    // Add page title to the top of the TOC
+    const pageTitle=document.querySelector('h1');
+    if(pageTitle){
+      const titleEl=document.createElement('p');
+      titleEl.textContent=pageTitle.textContent;
+      titleEl.className='block pb-2 font-semibold text-gray-900 dark:text-gray-100';
+      toc.appendChild(titleEl);
+    }
+
+    // Generate links for each heading
+    hs.forEach(h=>{
+      // Ensure each heading has an id
+      const id=h.id || h.textContent.trim().toLowerCase().replace(/\s+/g,'-');
+      h.id=id;
+      const a=document.createElement('a');
+      a.href='#'+id;
+      a.textContent=h.textContent;
+      a.className='block py-1 text-gray-600 dark:text-gray-400 hover:text-blue-600';
+      toc.appendChild(a);
+    });
+
+    const links=[...toc.querySelectorAll('a')];
+
+    // Scroll‑spy: highlight the heading 
+    const highlightCurrent=()=>{
+      let curIndex=0;
+      let minDelta=Infinity;
+      hs.forEach((h,i)=>{
+        const delta=Math.abs(h.getBoundingClientRect().top - 40);
+        if(delta<minDelta){
+          minDelta=delta;
+          curIndex=i;
+        }
+      });
+      links.forEach((l,i)=>{
+        const active=i===curIndex;
+        l.classList.toggle('text-blue-600',active);
+        l.classList.toggle('font-bold',active);
+      });
+    };
+
+    highlightCurrent();
+    window.addEventListener('scroll',highlightCurrent,{passive:true});
+    window.addEventListener('resize',highlightCurrent);
+
+    toc.classList.remove('hidden');
+  });
+</script>
+
+  </main>
+
+  <footer class='mx-auto max-w-4xl pb-10 px-6 text-center text-sm text-gray-500 dark:text-gray-400'>© 2025 Rasmus Larsen. All text is <a href='https://creativecommons.org/licenses/by-sa/4.0/'>CC-BY-SA 4.0</a>.</footer>
+</body>
+</html>

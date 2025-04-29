@@ -1,0 +1,143 @@
+[
+    {
+      "model": "Mistral-Small-24B-Base-2501(8b)",
+      "parameters": 23.5724032,
+      "github-python-2025.json": 3.982,
+      "dr-2025.json": 10.414,
+      "enwiki-2025.json": 7.49,
+      "dawiki-2025.json": 9.759,
+      "average": 7.911
+    },
+    {
+      "model": "munin-7b-alpha",
+      "parameters": 7.241732096,
+      "da-fiction.json": 13.307,
+      "da-nonfiction.json": 12.725,
+      "enwiki-2025.json": 8.642,
+      "github-python-2025.json": 5.637,
+      "dawiki-2025.json": 10.242,
+      "dr-2025.json": 9.707,
+      "average": 10.043
+    },
+    {
+      "model": "llama-3.2-3B-mix-danweb1.0-fineweb1.0",
+      "parameters": 3.606752256,
+      "dr-2025.json": 9.049,
+      "da-nonfiction.json": 12.358,
+      "dawiki-2025.json": 9.795,
+      "da-fiction.json": 12.836,
+      "github-python-2025.json": 8.977,
+      "enwiki-2025.json": 8.989,
+      "average": 10.334
+    },
+    {
+      "model": "llama-3.2-3B-mix-danweb1.0-fineweb0.5",
+      "parameters": 3.606752256,
+      "dawiki-2025.json": 9.737,
+      "da-nonfiction.json": 12.325,
+      "github-python-2025.json": 9.492,
+      "dr-2025.json": 8.975,
+      "enwiki-2025.json": 9.086,
+      "da-fiction.json": 12.686,
+      "average": 10.383
+    },
+    {
+      "model": "munin-neuralbeagle-7b",
+      "parameters": 7.241732096,
+      "da-fiction.json": 15.221,
+      "enwiki-2025.json": 8.512,
+      "dawiki-2025.json": 10.922,
+      "da-nonfiction.json": 13.88,
+      "dr-2025.json": 11.062,
+      "github-python-2025.json": 5.502,
+      "average": 10.85
+    },
+    {
+      "model": "Qwen2.5-7B",
+      "parameters": 7.615616512,
+      "dawiki-2025.json": 15.473,
+      "enwiki-2025.json": 9.241,
+      "dr-2025.json": 15.051,
+      "da-fiction.json": 19.5,
+      "github-python-2025.json": 4.476,
+      "da-nonfiction.json": 18.347,
+      "average": 13.681
+    },
+    {
+      "model": "Llama-3.1-8B",
+      "parameters": 8.030261248,
+      "da-fiction.json": 15.996,
+      "da-nonfiction.json": 14.656,
+      "dr-2025.json": 11.978,
+      "dawiki-2025.json": 11.644,
+      "github-python-2025.json": 4.778,
+      "enwiki-2025.json": 8.284,
+      "average": 11.223
+    },
+    {
+      "model": "Mistral-7B-v0.1",
+      "parameters": 7.241732096,
+      "github-python-2025.json": 5.205,
+      "dr-2025.json": 12.241,
+      "enwiki-2025.json": 8.256,
+      "da-fiction.json": 17.043,
+      "da-nonfiction.json": 14.631,
+      "dawiki-2025.json": 11.397,
+      "average": 11.462
+    },
+    {
+      "model": "llama-3.2-3B-danish-only",
+      "parameters": 3.606752256,
+      "da-nonfiction.json": 12.616,
+      "github-python-2025.json": 14.8,
+      "da-fiction.json": 12.539,
+      "dawiki-2025.json": 10.22,
+      "dr-2025.json": 8.927,
+      "enwiki-2025.json": 10.909,
+      "average": 11.668
+    },
+    {
+      "model": "Llama-3.2-3B",
+      "parameters": 3.212749824,
+      "dr-2025.json": 12.645,
+      "enwiki-2025.json": 8.57,
+      "da-nonfiction.json": 15.403,
+      "dawiki-2025.json": 12.233,
+      "da-fiction.json": 16.918,
+      "github-python-2025.json": 4.98,
+      "average": 11.791
+    },
+    {
+      "model": "gemma-3-12b-pt",
+      "parameters": 12.18732504,
+      "github-python-2025.json": 6.207,
+      "enwiki-2025.json": 8.197,
+      "dr-2025.json": 11.398,
+      "da-nonfiction.json": 22.537,
+      "da-fiction.json": 23.816,
+      "dawiki-2025.json": 10.867,
+      "average": 13.837
+    },
+    {
+      "model": "OLMo-2-1124-7B",
+      "parameters": 7.298617344,
+      "github-python-2025.json": 5.668,
+      "dawiki-2025.json": 15.57,
+      "enwiki-2025.json": 8.308,
+      "da-nonfiction.json": 18.949,
+      "da-fiction.json": 20.212,
+      "dr-2025.json": 15.521,
+      "average": 14.038
+    },
+    {
+      "model": "Qwen2.5-3B",
+      "parameters": 3.085938688,
+      "da-nonfiction.json": 19.237,
+      "github-python-2025.json": 4.601,
+      "dr-2025.json": 15.753,
+      "da-fiction.json": 20.175,
+      "enwiki-2025.json": 9.368,
+      "dawiki-2025.json": 15.988,
+      "average": 14.187
+    }
+  ]
