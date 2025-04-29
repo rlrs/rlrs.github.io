@@ -7,15 +7,45 @@
   <title>{{ page.meta.title ~ ' · ' if page else '' }}{{ site.site_name }}</title>
   <link rel='stylesheet' href='/pygments.css'>
   <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css'>
-  <script>tailwind={};tailwind.config={darkMode:'class'};</script>
   <script src='https://cdn.tailwindcss.com?plugins=typography'></script>
+  <script>
+    window.tailwind.config = {
+      darkMode: 'class'
+    };</script>
   <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js'></script>
   <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js' onload='renderMathInElement(document.body)'></script>
   <style>
-    .cite{position:relative;display:inline-block;color:#0070f3;text-decoration:none}
-    .cite::after{content:attr(data-ref);position:absolute;left:0;top:100%;background:#fff;border:1px solid #ddd;padding:.25rem .5rem;font-size:.75rem;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,.1);opacity:0;transform:translateY(.25rem);transition:opacity .1s ease,transform .1s ease;color:#111;pointer-events:none}
-    .cite:hover::after,.cite:focus-visible::after{opacity:1;transform:translateY(0);pointer-events:auto}
+    .cite{
+      position:relative;
+      display:inline-block;
+      color:#0070f3;
+      text-decoration:none
+    }
+    .cite::after{
+      content:attr(data-ref);
+      position:absolute;
+      width: 20rem;
+      top:100%;
+      background:#fff;
+      border:1px solid #ddd;
+      padding:.25rem .5rem;
+      font-size:.75rem;
+      white-space: pre-wrap;
+      box-shadow:0 2px 4px rgba(0,0,0,.1);
+      opacity:0;
+      transform: translateY(.5rem);
+      transition:opacity .1s ease,transform .1s ease;
+      color:#111;
+      pointer-events:none;
+      z-index: 30;
+    }
+    .cite:hover::after,.cite:focus-visible::after{
+      opacity:1;
+      transform:translateY(0);
+      pointer-events:auto
+    }
     .prose h2,.prose h3{scroll-margin-top:5.5rem}
+    html, body { overflow-x: hidden; }
   </style>
   <script>
     // theme toggle
@@ -51,7 +81,7 @@
     </div>
   </header>
 
-  <main class="mx-auto {{ 'max-w-5xl' if page is defined and page.meta.wide else 'max-w-4xl' }} p-6">
+  <main class="mx-auto {{ 'max-w-5xl' if page is defined and page.meta.wide else 'max-w-3xl' }} p-6">
     {% block content %}{% endblock %}
   </main>
 
