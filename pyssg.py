@@ -102,7 +102,7 @@ class Site:
     def __init__(self, root: pathlib.Path):
         self.root = root
         self.config = self._load_config()
-        self.dist = root / "dist"
+        self.dist = root / "docs"
         self.dist.mkdir(exist_ok=True)
         self.pages: List[Page] = []
         self.env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(root / "theme")), autoescape=True)

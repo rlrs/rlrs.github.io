@@ -63,11 +63,21 @@
       });
     };
 
-    highlightCurrent();
-    window.addEventListener('scroll',highlightCurrent,{passive:true});
-    window.addEventListener('resize',highlightCurrent);
+    /* ---------- RESPONSIVE TOC VISIBILITY ---------- */
+    const XL_MIN = 1280;                               // Tailwind's `xl` starts at 1280 px
+    const toggleToc = () => {
+      if (window.innerWidth >= XL_MIN) {
+        toc.classList.remove('hidden');                // show on desktop
+        highlightCurrent();                            // ensure initial highlight
+      } else {
+        toc.classList.add('hidden');                   // hide on tablets / phones
+      }
+    };
 
-    toc.classList.remove('hidden');
+    toggleToc();                                       // run once at load
+    window.addEventListener('resize', toggleToc, { passive: true });
+    window.addEventListener('scroll',highlightCurrent,{passive:true});
+
   });
 </script>
 {% endblock %}
