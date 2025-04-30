@@ -284,5 +284,16 @@
         "Python-2025.json": 3.534,
         "Danish-News-2025.json": 10.852,
         "average": 10.31
+    },
+    {
+      "model": "helium-1-2b",
+      "parameters": 2.0,
+      "Danish-Nonfiction.json": 14.571,
+      "Danish-News-2025.json": 11.612,
+      "English-Wiki-2025.json": 8.952,
+      "Danish-Fiction.json": 16.474,
+      "Danish-Wiki-2025.json": 11.693,
+      "Python-2025.json": 8.055,
+      "average": 11.893
     }
   ]
