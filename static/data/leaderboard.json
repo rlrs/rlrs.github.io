@@ -295,5 +295,38 @@
       "Danish-Wiki-2025.json": 11.693,
       "Python-2025.json": 8.055,
       "average": 11.893
-    }
+    },
+    {
+    "model": "Llama-3.1-405B",
+    "parameters": 406,
+    "enwiki-2025.json": 6.752,
+    "github-python-2025.json": 3.686,
+    "dr-2025.json": 8.754,
+    "da-fiction.json": 11.852,
+    "da-nonfiction.json": 9.12,
+    "dawiki-2025.json": 8.027,
+    "average": 8.032
+  },
+  {
+    "model": "DeepSeek-V3-Base",
+    "parameters": 685,
+    "enwiki-2025.json": 6.737,
+    "da-fiction.json": 12.13,
+    "dawiki-2025.json": 8.495,
+    "dr-2025.json": 8.91,
+    "da-nonfiction.json": 10.734,
+    "github-python-2025.json": 3.236,
+    "average": 8.373
+  },
+  {
+    "model": "Llama-4-Scout-17B-16E",
+    "parameters": 109,
+    "da-fiction.json": 19.316,
+    "github-python-2025.json": 5.524,
+    "enwiki-2025.json": 11.021,
+    "dr-2025.json": 13.851,
+    "da-nonfiction.json": 17.006,
+    "dawiki-2025.json": 13.714,
+    "average": 13.405
+  }
   ]
