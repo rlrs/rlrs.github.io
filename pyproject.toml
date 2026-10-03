@@ -1,7 +1,7 @@
 [project]
 name = "pyssg"
 version = "0.1.0"
-description = "Minimal static site generator for rlrs.dk"
+description = "Minimal static site generator for rlrs.github.io"
 readme = "README.md"
 requires-python = ">=3.10.13"
 dependencies = [
