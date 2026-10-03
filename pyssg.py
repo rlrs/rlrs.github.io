@@ -37,6 +37,7 @@ Usage:
 import argparse
 import datetime as dt
 import email.utils
+import functools
 import html
 import http.server
 import logging
@@ -47,6 +48,7 @@ import shutil
 import time
 import threading
 import socketserver
+import sys
 import textwrap
 from typing import Any, Dict, List
 
@@ -54,6 +56,7 @@ import bibtexparser  # type: ignore
 import jinja2  # type: ignore
 import yaml  # type: ignore
 from markdown_it import MarkdownIt  # type: ignore
+from mdit_py_plugins.anchors import anchors_plugin  # type: ignore
 from mdit_py_plugins.dollarmath import dollarmath_plugin  # type: ignore
 import pytailwindcss  # type: ignore
 from PIL import Image, ImageDraw, ImageFont  # type: ignore
@@ -67,7 +70,7 @@ from watchdog.events import FileSystemEventHandler  # type: ignore
 # Markdown helpers
 # ----------------------------------------------------------------------------
 
-_PYGMENTS_STYLE = "github-dark"  # matches the dark <pre> background of Tailwind's prose
+_PYGMENTS_STYLES = {"": "lovelace", ".dark ": "github-dark"}  # selector prefix → style (light, dark)
 
 def _highlight(code: str, lang: str, *_):
     try:
@@ -84,6 +87,8 @@ _MD.options["highlight"] = _highlight
 # theme/base.html typesets with KaTeX. allow_space/allow_digits off so prose like
 # "$5 and $10" stays plain text.
 dollarmath_plugin(_MD, allow_space=False, allow_digits=False)
+# ids on h2/h3 at build time, so #section links work and the post TOC can use them
+anchors_plugin(_MD, min_level=2, max_level=3)
 
 _TAILWIND_VERSION = "v4.3.3"  # pinned so local and CI builds match
 
@@ -102,8 +107,20 @@ class Page:
         self.is_post = is_post
         self.slug = meta.get("slug") or src.stem
         self.date = self._parse_date(meta.get("date"), src)
-        self.url = f"/blog/{self.slug}.html" if is_post else f"/{self.slug}.html"
+        # A page with `parent: <post slug>` is a companion to that post (e.g. an
+        # interactive table): it lives under the post's URL and stays out of the nav.
+        self.parent_slug = meta.get("parent")
+        if is_post:
+            self.url = f"/blog/{self.slug}.html"
+        elif self.parent_slug:
+            self.url = f"/blog/{self.parent_slug}/{self.slug}.html"
+        else:
+            self.url = f"/{self.slug}.html"
+        self.in_nav = not is_post and not self.parent_slug and meta.get("nav", True)
         self.excerpt = meta.get("summary") or self._make_excerpt()
+        self.reading_minutes = max(1, round(len(body_md.split()) / 230))
+        self.parent: "Page | None" = None      # linked up by Site._link_pages
+        self.attachments: List["Page"] = []
         self.og_image = ""  # set by Site._render_og_images
 
     @staticmethod
@@ -150,7 +167,7 @@ class Site:
 
     # ---------------------------------------------------------------- build
     def build(self):
-        self._clean_dist()
+        started = time.time()
         self._discover()
         self._copy_static()
         self._emit_pygments_css()
@@ -158,19 +175,22 @@ class Site:
         self._render_og_images()
         self._render_pages()
         self._render_indexes()
+        self._render_redirects()
         self._render_tags()
         self._render_feed()
+        self._prune_dist(started)
         logging.info("Build finished → %s", self.dist)
 
     # ----------------------------------------------------------- discovery
-    def _clean_dist(self):
-        # Empty the output dir (not the dir itself – `serve` has chdir'd into it) so
-        # deleted pages and assets don't linger.
-        for child in self.dist.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
+    def _prune_dist(self, started: float):
+        # Every build rewrites all its outputs, so anything older than this build is
+        # left over from a deleted page or asset. Pruning afterwards (rather than
+        # emptying dist/ first) means `serve` never serves a half-empty site.
+        for f in sorted(self.dist.rglob("*"), reverse=True):
+            if f.is_file() and f.stat().st_mtime < started:
+                f.unlink()
+            elif f.is_dir() and not any(f.iterdir()):
+                f.rmdir()
 
     def _discover(self):
         self.pages = []
@@ -182,6 +202,17 @@ class Site:
             if meta.get("bib"):
                 html_body = self._apply_citations(html_body, md.parent / meta["bib"])
             self.pages.append(Page(md, meta, body, html_body, is_post))
+        self._link_pages()
+
+    def _link_pages(self):
+        posts = {p.slug: p for p in self.pages if p.is_post}
+        for pg in self.pages:
+            if not pg.parent_slug:
+                continue
+            if pg.parent_slug not in posts:
+                raise ValueError(f"{pg.src}: parent {pg.parent_slug!r} is not a post slug")
+            pg.parent = posts[pg.parent_slug]
+            pg.parent.attachments.append(pg)
 
     @staticmethod
     def _split_front(text: str):
@@ -191,7 +222,9 @@ class Site:
         return {}, text
 
     def _md_to_html(self, md_text: str):
-        return _MD.render(md_text)
+        # wrap tables so wide ones scroll sideways on phones instead of being cut off
+        out = _MD.render(md_text)
+        return out.replace("<table>", "<div class='overflow-x-auto'><table>").replace("</table>", "</table></div>")
 
     # ----------------------------------------------------------- citations
     def _parse_author_name(self, raw: str) -> str:
@@ -293,26 +326,28 @@ class Site:
 
     def _draw_og_card(self, title: str, kicker: str, footer: str, dest: pathlib.Path):
         fonts = self.root / "theme" / "fonts"
-        bold, regular = fonts / "Inter-Bold.ttf", fonts / "Inter-Regular.ttf"
+        serif, regular = fonts / "SourceSerif4-Semibold.ttf", fonts / "Inter-Regular.ttf"
         w, h = self._OG_SIZE
         pad = 80
-        img = Image.new("RGB", (w, h), "#f9fafb")      # Tailwind gray-50, like the site
+        # colours mirror the light theme tokens in theme/site.css
+        ink, muted, accent = "#1d1c1a", "#75716a", "#0f766e"
+        img = Image.new("RGB", (w, h), "#fbfaf7")      # --paper
         d = ImageDraw.Draw(img)
-        d.rectangle([0, 0, w, 12], fill="#3b82f6")      # blue-500 accent
-        small = ImageFont.truetype(str(regular), 32)
+        d.rectangle([0, 0, w, 10], fill=accent)
+        small = ImageFont.truetype(str(regular), 30)
         if kicker:
-            d.text((pad, pad), kicker, font=small, fill="#6b7280")
-        # largest title size (72 → 44px) that wraps into at most 4 lines
-        for size in range(72, 43, -4):
-            font = ImageFont.truetype(str(bold), size)
+            d.text((pad, pad), kicker, font=small, fill=muted)
+        # largest title size (76 → 48px) that wraps into at most 4 lines
+        for size in range(76, 47, -4):
+            font = ImageFont.truetype(str(serif), size)
             lines = self._wrap(title, font, w - 2 * pad)
             if len(lines) <= 4:
                 break
-        line_h = round(size * 1.2)
+        line_h = round(size * 1.15)
         top = (h - line_h * len(lines)) // 2
         for i, line in enumerate(lines):
-            d.text((pad, top + i * line_h), line, font=font, fill="#111827")
-        d.text((pad, h - pad - 32), footer, font=small, fill="#6b7280")
+            d.text((pad, top + i * line_h), line, font=font, fill=ink)
+        d.text((pad, h - pad - 30), footer, font=small, fill=muted)
         dest.parent.mkdir(parents=True, exist_ok=True)
         img.save(dest, optimize=True)
 
@@ -341,12 +376,30 @@ class Site:
 
     def _render_indexes(self):
         posts = sorted([p for p in self.pages if p.is_post], key=lambda x: x.date, reverse=True)
+        tmpl = self.env.get_template("index.html")
         ctx = {"site": self.config, "posts": posts, "pages": self.pages, "today": dt.date.today()}
-        html_index = self.env.get_template("index.html").render(**ctx)
-        (self.dist / "index.html").write_text(html_index, "utf8")
+        # home page: intro (config `intro`, Markdown) + posts; /blog/: just the archive
+        intro = _MD.render(self.config.get("intro", ""))
+        (self.dist / "index.html").write_text(tmpl.render(home=True, intro=intro, **ctx), "utf8")
         blog_dir = self.dist / "blog"
         blog_dir.mkdir(exist_ok=True)
-        (blog_dir / "index.html").write_text(html_index, "utf8")
+        (blog_dir / "index.html").write_text(tmpl.render(home=False, **ctx), "utf8")
+
+    def _render_redirects(self):
+        """`redirect_from: [/old.html]` in front matter leaves a stub that forwards to the new URL."""
+        for pg in self.pages:
+            for old in pg.meta.get("redirect_from", []):
+                target = html.escape(pg.url)
+                stub = (
+                    "<!DOCTYPE html><meta charset='utf-8'>"
+                    f"<title>Moved</title><link rel='canonical' href='{html.escape(self.config.get('base_url', ''))}{target}'>"
+                    f"<meta http-equiv='refresh' content='0; url={target}'>"
+                    f"<script>location.replace('{target}' + location.hash)</script>"
+                    f"<p>This page has moved to <a href='{target}'>{target}</a>.</p>"
+                )
+                dest = self.dist / old.lstrip("/")
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(stub, "utf8")
 
     def _render_tags(self):
         by_tag: Dict[str, List[Page]] = {}
@@ -386,20 +439,27 @@ class Site:
     def _copy_static(self):
         static = self.root / "static"
         if static.exists():
-            shutil.copytree(static, self.dist / "static", dirs_exist_ok=True)
+            # plain copy (not copy2) so files get a fresh mtime – see _prune_dist
+            shutil.copytree(static, self.dist / "static", dirs_exist_ok=True, copy_function=shutil.copy)
 
     def _emit_pygments_css(self):
-        (self.dist / "pygments.css").write_text(HtmlFormatter(style=_PYGMENTS_STYLE).get_style_defs("pre.highlight"), "utf8")
+        css = "\n".join(HtmlFormatter(style=style).get_style_defs(f"{prefix}pre.highlight")
+                        for prefix, style in _PYGMENTS_STYLES.items())
+        (self.dist / "pygments.css").write_text(css, "utf8")
 
     def _build_css(self):
         src = self.root / "theme" / "site.css"
         if not src.exists():
             return
+        out = self.dist / "site.css"
         # Downloads the pinned standalone Tailwind binary on first use.
-        pytailwindcss.run(
-            ["-i", str(src), "-o", str(self.dist / "site.css"), "--minify"],
+        log = pytailwindcss.run(
+            ["-i", str(src), "-o", str(out), "--minify"],
             cwd=self.root, auto_install=True, version=_TAILWIND_VERSION,
         )
+        if not out.exists():
+            raise RuntimeError(f"Tailwind produced no {out}:\n{log}")
+        out.touch()  # Tailwind skips unchanged output; keep it from looking stale to _prune_dist
 
 # ----------------------------------------------------------------------------
 # Live‑reload dev server using watchdog
@@ -407,8 +467,9 @@ class Site:
 
 def _serve(site: Site, port: int):
     def run_server():
-        os.chdir(site.dist)
-        with socketserver.TCPServer(("", port), http.server.SimpleHTTPRequestHandler) as httpd:
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site.dist))
+        socketserver.TCPServer.allow_reuse_address = True  # restart without waiting for the old socket
+        with socketserver.TCPServer(("", port), handler) as httpd:
             print(f"Serving on http://localhost:{port} – press Ctrl+C to stop")
             httpd.serve_forever()
     threading.Thread(target=run_server, daemon=True).start()
@@ -432,6 +493,10 @@ def _serve(site: Site, port: int):
                 return
             self._last = now
             logging.info("[watch] change detected: %s", event.src_path)
+            if pathlib.Path(event.src_path).resolve() == pathlib.Path(__file__).resolve():
+                # the generator itself changed: restart so the new code is used
+                logging.info("[watch] pyssg.py changed, restarting")
+                os.execv(sys.executable, [sys.executable, str(pathlib.Path(__file__).resolve()), *sys.argv[1:]])
             site.build()
     observer = Observer()
     watch_dirs = [site.root/"content", site.root/"theme", site.root/"static", site.root]

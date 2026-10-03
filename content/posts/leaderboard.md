@@ -6,13 +6,13 @@ bib: leaderboard.bib
 summary: "Introduces a Danish-centric benchmark and leaderboard that grades base LLMs by compression efficiency on fresh Danish, English and Python text."
 ---
 
-**TL;DR:** I introduce a Danish-centric benchmark and public [leaderboard](/leaderboard.html) that scores base LLMs by how well they compress unseen Danish, English, and Python text (lower = better) - an information-theoretic lens on predictive power that avoids most training-data contamination. On this metric, models as small as `munin-7b-alpha` rival or beat much larger baselines, several European models are in the game, and Gemma 3 tops the board.
+**TL;DR:** I introduce a Danish-centric benchmark and public [leaderboard](/blog/leaderboard/results.html) that scores base LLMs by how well they compress unseen Danish, English, and Python text (lower = better) - an information-theoretic lens on predictive power that avoids most training-data contamination. On this metric, models as small as `munin-7b-alpha` rival or beat much larger baselines, several European models are in the game, and Gemma 3 tops the board.
 
 ---
 
 ## Leaderboard Snapshot
 
-If you just want the scores, here are the some of the more interesting ones taken from the full [leaderboard](/leaderboard.html). Please visit it for interactivity and to see all the results.
+If you just want the scores, here are the some of the more interesting ones taken from the full [leaderboard](/blog/leaderboard/results.html). Please visit it for interactivity and to see all the results.
 
 | Model | Danish Fiction | Danish Non-fiction | Danish Wiki 2025 | Danish News 2025 | English Wiki 2025 | Python 2025 |
 |-------|-----------:|--------------:|------------:|--------:|------------:|-------------------:|
@@ -61,6 +61,6 @@ Very similarly, Gadre et al. [@gadre2024scale] find that validation loss predict
 
 To sum up, we have a lot of things pointing suggestively at the link between what we're measuring and intelligence, but there are unfortunately plenty of caveats. For example, not all tokens are equally important to predict [@fang2025wrong], and models that are good at next-token prediction are not always good at in-context learning [@shin2022effect]. Prediction, and thus compression, is a necessary but not sufficient condition for intelligence; the same loss can likely be achieved by very different internal representations, and only some support generalization and reasoning. This benchmark is useful for selecting for better, smarter base models, but we will continue using downstream task evaluations for things we actually care about, and for post-trained models.
 
-Please visit the [leaderboard](/leaderboard.html)! I welcome constructive feedback on methodology, results, or potential improvements. I bet there's a lot of things that could be done in the future, or could've been done better already. You can contact me at [rasmus.larsen@alexandra.dk](mailto:rasmus.larsen@alexandra.dk) or **@synquid** on Discord.
+Please visit the [leaderboard](/blog/leaderboard/results.html)! I welcome constructive feedback on methodology, results, or potential improvements. I bet there's a lot of things that could be done in the future, or could've been done better already. You can contact me at [rasmus.larsen@alexandra.dk](mailto:rasmus.larsen@alexandra.dk) or **@synquid** on Discord.
 
 Shout out to [Jellyfish042/UncheatableEval](https://huggingface.co/spaces/Jellyfish042/UncheatableEval) which inspired the use of new online data for benchmarking.

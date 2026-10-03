@@ -1,64 +1,48 @@
-// LeaderboardWidget – simplified controls & proper sort arrows, dark‑mode aware with Tailwind
+// LeaderboardWidget – sortable, filterable results table; colours come from the site's CSS tokens
 class LeaderboardWidget extends HTMLElement {
     async connectedCallback () {
       /* ----------------- HTML skeleton ----------------- */
       this.innerHTML = `
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.8.1/dist/nouislider.min.css" />
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.8.1/dist/nouislider.min.css" />
       <style>
-        /* -------- nouislider track & connect bar -------- */
-        .noUi-target{background:#e5e7eb;border:none;border-radius:9999px;height:6px}
-        .noUi-connect{background:#3b82f6;border-radius:9999px}
-        /* -------- make the circle handle invisible -------- */
-        .noUi-handle{height:0;width:0;border:none;background:transparent;top:0;cursor:pointer;box-shadow:none}
-        .noUi-handle:after,.noUi-handle:before{display:none}
-        /* -------- tooltip becomes the visible drag element, placed above -------- */
-        .noUi-tooltip{position:absolute;top:-36px;bottom:auto;background:#3b82f6;color:#fff;font-size:0.75rem;font-weight:500;padding:2px 6px;border-radius:4px;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.08)}
-        .noUi-tooltip::after{content:"";position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);border-width:4px;border-style:solid;border-color:#3b82f6 transparent transparent transparent}
-        .noUi-horizontal .noUi-tooltip{transform:translate(-50%,100%);}
-        /* -------- dark mode variants -------- */
-        .dark .noUi-target{background:#374151}
-        .dark .noUi-connect{background:#2563eb}
-        .dark .noUi-tooltip{background:#2563eb;color:#e0e7ff}
-        .dark .noUi-tooltip::after{border-color:#2563eb transparent transparent transparent}
+        /* nouislider, restyled with the site's colour tokens (theme/site.css) */
+        leaderboard-widget .noUi-target{background:var(--line);border:none;border-radius:9999px;height:4px;box-shadow:none}
+        leaderboard-widget .noUi-connect{background:var(--accent)}
+        leaderboard-widget .noUi-horizontal .noUi-handle{height:16px;width:16px;top:-6px;right:-8px;border-radius:9999px;border:2px solid var(--accent);background:var(--surface);box-shadow:none;cursor:grab}
+        leaderboard-widget .noUi-handle:after,leaderboard-widget .noUi-handle:before{display:none}
+        leaderboard-widget .noUi-handle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+        leaderboard-widget .noUi-horizontal .noUi-tooltip{bottom:auto;top:-30px;border:none;border-radius:6px;background:var(--ink);color:var(--paper);font-size:.75rem;font-weight:500;padding:1px 6px;font-variant-numeric:tabular-nums}
+        leaderboard-widget input[type=range]{accent-color:var(--accent)}
       </style>
-      <div class="leaderboard-container mx-auto max-w-6xl text-gray-900 dark:text-gray-200">
-        <p class="text-lg mb-4">Model compression rate (%) across different datasets. <span class="font-medium">Lower is better. </span>See also the corresponding <a href="/blog/leaderboard.html">blog post</a>.</p>
-
-        <!-- Controls row -->
-        <div class="filter-controls bg-gray-100 dark:bg-gray-800 rounded-lg p-6 mb-6">
-          <div class="flex flex-wrap items-end gap-8">
-            <!-- Parameter range (takes most width) -->
-            <div class="grow basis-0 min-w-[280px]">
-              <label for="parameter-range" class="block mb-2 text-sm font-medium">Parameter Size Range (Billions)</label>
-              <div class="flex items-center gap-2">
-                <span id="param-min-value" class="text-center w-12">0</span>
-                <div class="grow"><div id="parameter-range"></div></div>
-                <span id="param-max-value" class="text-center w-12">25</span>
-              </div>
-            </div>
-            <!-- Color midpoint (compact) -->
-            <div class="basis-56">
-              <label for="color-gradient-midpoint" class="block mb-2 text-sm font-medium">Color Midpoint</label>
-              <input type="range" id="color-gradient-midpoint" min="0.1" max="0.9" step="0.05" value="0.2" class="w-full h-2 rounded-lg bg-gray-200 appearance-none cursor-pointer dark:bg-gray-700" />
-            </div>
+      <div class="text-ink-soft">
+        <!-- Controls -->
+        <div class="mb-5 flex flex-wrap items-end gap-x-10 gap-y-6 rounded-xl border border-line bg-surface px-5 pt-4 pb-5">
+          <div class="grow basis-72">
+            <label class="block text-sm font-medium text-ink">Model size <span class="font-normal text-muted">(billion parameters)</span></label>
+            <div class="px-2 pt-10"><div id="parameter-range"></div></div>
+          </div>
+          <div class="basis-52 grow sm:grow-0">
+            <label for="color-gradient-midpoint" class="block text-sm font-medium text-ink">Colour midpoint</label>
+            <input type="range" id="color-gradient-midpoint" min="0.1" max="0.9" step="0.05" value="0.2" class="mt-4 w-full cursor-pointer" />
           </div>
         </div>
 
         <!-- Table -->
-        <div class="overflow-x-auto max-h-[85vh]">
-          <table id="leaderboard-table" class="min-w-full text-sm">
+        <div class="overflow-auto max-h-[80vh] rounded-xl border border-line bg-surface">
+          <table id="leaderboard-table" class="min-w-full text-sm border-separate border-spacing-0">
             <thead><tr></tr></thead>
             <tbody></tbody>
           </table>
         </div>
+        <p class="mt-3 text-xs text-muted">Click a column header to sort. Darker cells compress better within that column; compare models within a column, not across columns.</p>
 
         <!-- Empty state -->
-        <div id="no-results" class="hidden text-center p-8 bg-blue-50 text-blue-600 dark:bg-blue-900 dark:text-blue-100 rounded-lg">
-          No models match the selected filters.
+        <div id="no-results" class="hidden rounded-xl border border-dashed border-line p-8 text-center text-muted">
+          No models in this size range.
         </div>
       </div>
       `;
-  
+
       /* ----------------- Load libraries ----------------- */
       await import("https://cdn.jsdelivr.net/npm/d3@7");
       await import("https://cdn.jsdelivr.net/npm/nouislider@15.8.1/dist/nouislider.min.js");
@@ -75,13 +59,14 @@ class LeaderboardWidget extends HTMLElement {
       const parameterRange      = this.querySelector("#parameter-range");
   
       /* ----------------- Helpers ----------------- */
-      const isDark = () => document.documentElement.classList.contains("dark");
-      const GOOD   = () => (isDark() ? "#4ade80" : "#63be7b");
-      const BAD    = () => (isDark() ? "#f87171" : "#f8696b");
-      const NEUTRAL= () => (isDark() ? "#374151" : "#ffffff");
-  
+      // sequential single-hue scale (colour-blind safe), defined in theme/site.css
+      const token  = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const GOOD   = () => token("--lb-good");
+      const MID    = () => token("--lb-mid");
+      const BAD    = () => token("--surface");
+
       /* ----------------- Load data ----------------- */
-      d3.json("static/data/leaderboard.json").then((data) => {
+      d3.json("/static/data/leaderboard.json").then((data) => {
         const datasets = new Set();
         const paramSizes = [];
         data.forEach((row) => {
@@ -95,14 +80,14 @@ class LeaderboardWidget extends HTMLElement {
         /* Range slider */
         const pMin = Math.floor(Math.min(...paramSizes));
         const pMax = Math.ceil(Math.max(...paramSizes));
-        this.querySelector("#param-min-value").textContent = pMin;
-        this.querySelector("#param-max-value").textContent = pMax;
   
         noUiSlider.create(parameterRange, {
           start: [pMin, pMax],
           connect: true,
-          range: { min: pMin, max: pMax },
+          // most models are small: give the first 30B more than half of the track
+          range: pMax > 100 ? { min: pMin, "55%": 30, "80%": 100, max: pMax } : { min: pMin, max: pMax },
           step: 0.1,
+          margin: 0.1,
           tooltips: [true, true],
           format: {
             to: (value) => (+value).toFixed(1),
@@ -128,10 +113,10 @@ class LeaderboardWidget extends HTMLElement {
           const makeTH = (label, key, isDataset = false) => {
             const th = document.createElement("th");
             th.textContent = label;
-            th.className = "px-3 py-2 border-t border-gray-200 dark:border-gray-600 font-medium text-center sticky top-0 z-20 bg-white dark:bg-gray-700 select-none";
+            th.className = "sticky top-0 z-20 bg-surface border-b border-line px-3 pt-3 pb-2 align-bottom text-xs font-medium text-muted text-right whitespace-normal min-w-[5.5rem] select-none";
             if (key) {
               if (isDataset) th.dataset.dataset = key; else th.dataset.column = key;
-              th.classList.add("cursor-pointer", "group", "relative");
+              th.classList.add("cursor-pointer", "hover:text-ink", "transition-colors");
               th.addEventListener("click", () => {
                 if (currentSort.column === key) {
                   currentSort.order = currentSort.order === "asc" ? "desc" : "asc";
@@ -145,9 +130,13 @@ class LeaderboardWidget extends HTMLElement {
             headerRow.appendChild(th);
           };
           makeTH("Model");
+          // model column stays put when the table scrolls sideways
+          headerRow.lastChild.classList.add("left-0", "z-30", "text-left", "min-w-0");
+          headerRow.lastChild.classList.remove("text-right");
           makeTH("Params (B)", "parameters");
           sortedDatasets.forEach((ds) => makeTH(formatDatasetName(ds), ds, true));
           makeTH("Average", "average");
+          headerRow.lastChild.classList.add("border-l");
           updateSortIndicators();
         }
   
@@ -159,8 +148,10 @@ class LeaderboardWidget extends HTMLElement {
           const th = headerRow.querySelector(`[data-column='${key}'], [data-dataset='${key}']`);
           if (!th) return;
           const icon = document.createElement("span");
-          icon.className = "sort-icon absolute right-1.5 top-1/2 -translate-y-1/2 text-xs select-none";
-          icon.textContent = currentSort.order === "asc" ? "▲" : "▼";
+          icon.className = "sort-icon ml-1 text-accent";
+          icon.textContent = currentSort.order === "asc" ? "↑" : "↓";
+          th.classList.add("text-ink");
+          headerRow.querySelectorAll("th").forEach((o) => o !== th && o.classList.remove("text-ink"));
           th.appendChild(icon);
         }
   
@@ -193,7 +184,7 @@ class LeaderboardWidget extends HTMLElement {
             const min = d3.min(vals);
             const max = d3.max(vals);
             const mid = min + (max - min) * midpoint;
-            dsScales[ds] = d3.scaleLinear().domain([min, mid, max]).range([GOOD(), NEUTRAL(), BAD()]);
+            dsScales[ds] = d3.scaleLinear().domain([min, mid, max]).range([GOOD(), MID(), BAD()]);
           });
   
           const avgVals = rows.map((r) => r.visibleAverage);
@@ -203,7 +194,7 @@ class LeaderboardWidget extends HTMLElement {
               (d3.min(avgVals) ?? 0) + (d3.max(avgVals) - (d3.min(avgVals) ?? 0)) * midpoint,
               d3.max(avgVals) ?? 1,
             ])
-            .range([GOOD(), NEUTRAL(), BAD()]);
+            .range([GOOD(), MID(), BAD()]);
   
           if (!rows.length) {
             noResultsMessage.classList.remove("hidden");
@@ -215,47 +206,43 @@ class LeaderboardWidget extends HTMLElement {
   
           rows.forEach((row, idx) => {
             const tr = document.createElement("tr");
-            tr.className = idx % 2 ? "bg-white dark:bg-gray-800" : "bg-gray-50 dark:bg-gray-700";
+            tr.className = "group";
   
             const cell = (txt) => {
               const td = document.createElement("td");
               td.textContent = txt;
-              td.className = "px-3 py-2 border-t border-gray-200 dark:border-gray-600 text-center";
+              td.className = "px-3 py-2 border-b border-line text-right tabular-nums";
               return td;
             };
   
             // model
             const modelTd = cell(row.model);
-            modelTd.classList.add("text-left", "font-medium", "whitespace-nowrap");
+            modelTd.classList.remove("text-right", "tabular-nums");
+            // narrow screens: wrap long names so the numbers stay in view
+            modelTd.classList.add("text-left", "font-medium", "text-ink", "min-w-[8.5rem]", "max-w-[8.5rem]", "sm:max-w-none", "wrap-anywhere", "sm:wrap-normal", "sm:whitespace-nowrap", "sticky", "left-0", "z-10", "bg-surface");
             tr.appendChild(modelTd);
   
             // params
             const paramTd = cell((+row.parameters).toFixed(1));
-            paramTd.style.background = isDark() ? "#92400e" : "#fffdd0";
-            paramTd.style.color = isDark() ? "#fff" : "#2d2d2d";
+            paramTd.classList.add("text-muted");
             tr.appendChild(paramTd);
   
             // datasets
             sortedDatasets.forEach((ds) => {
-              const td = cell("N/A");
+              const td = cell("–");
               if (row[ds] !== undefined) {
                 td.textContent = row[ds].toFixed(2);
-                const bg = dsScales[ds] ? dsScales[ds](row[ds]) : NEUTRAL();
-                td.style.background = bg;
-                td.style.color = d3.hsl(bg).l < 0.5 ? "#fff" : "#000";
+                td.style.background = dsScales[ds] ? dsScales[ds](row[ds]) : "";
               } else {
-                td.classList.add("italic");
-                td.style.background = isDark() ? "#4b5563" : "#e5e7eb";
+                td.classList.add("text-muted");
               }
               tr.appendChild(td);
             });
   
             // average
             const avgTd = cell(row.visibleAverage.toFixed(2));
-            const bg = avgScale(row.visibleAverage);
-            avgTd.style.background = bg;
-            avgTd.style.color = d3.hsl(bg).l < 0.5 ? "#fff" : "#000";
-            avgTd.classList.add("font-semibold");
+            avgTd.style.background = avgScale(row.visibleAverage);
+            avgTd.classList.add("font-semibold", "text-ink", "border-l");
             tr.appendChild(avgTd);
   
             tbody.appendChild(tr);
@@ -267,7 +254,7 @@ class LeaderboardWidget extends HTMLElement {
         }
       }).catch((err) => {
         console.error("Leaderboard load error", err);
-        this.innerHTML = `<div class="p-6 bg-red-50 dark:bg-red-900 text-red-700 dark:text-red-100 rounded-lg">Error loading leaderboard data. Please try again later.</div>`;
+        this.innerHTML = `<div class="rounded-xl border border-line p-6 text-muted">Couldn't load the leaderboard data. Please try again later.</div>`;
       });
     }
   }

@@ -1,10 +1,12 @@
-
 {% extends 'base.html' %}
 {% block content %}
-<h1 class='text-3xl font-bold mb-4'>#{{ tag }}</h1>
-<ul class='space-y-2'>
+<h1 class='font-serif text-3xl font-semibold tracking-tight text-ink mt-6 mb-6'>Tagged <span class='text-accent'>#{{ tag }}</span></h1>
+<ul class='divide-y divide-line'>
   {% for p in tag_pages %}
-    <li><a class='text-blue-600 dark:text-blue-400 hover:underline' href='{{ p.url }}'>{{ p.meta.title }}</a> <small class='text-gray-500 dark:text-gray-400'>{{ p.date }}</small></li>
+  <li class='py-4 flex flex-wrap items-baseline justify-between gap-x-6'>
+    <a class='font-serif text-lg font-semibold text-ink hover:text-accent transition-colors' href='{{ p.url }}'>{{ p.meta.title }}</a>
+    <time datetime='{{ p.date }}' class='text-sm text-muted tabular-nums'>{{ p.date.strftime('%-d %B %Y') }}</time>
+  </li>
   {% endfor %}
 </ul>
 {% endblock %}

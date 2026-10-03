@@ -1,8 +1,11 @@
 ---
-title: Base Model Leaderboard 
+title: Full leaderboard
+summary: "Compression rate (%) of every model on each dataset. Lower is better."
+parent: leaderboard
+slug: results
 wide: true
-nav_title: Leaderboard
+redirect_from: [/leaderboard.html]
 ---
 
 <script type="module" src="/static/leaderboard-widget.js"></script>
-<leaderboard-widget></leaderboard-widget>
+<leaderboard-widget class="not-prose block"></leaderboard-widget>

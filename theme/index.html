@@ -1,14 +1,22 @@
-
 {% extends 'base.html' %}
 {% block content %}
-{% if site.description %}<p class='mb-8 text-xl text-gray-600 dark:text-gray-300'>{{ site.description }}</p>{% endif %}
-<div class='space-y-8'>
-  {% for p in posts %}
-    <article class='group border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-sm transition'>
-      <h2 class='text-2xl font-semibold'><a href='{{ p.url }}' class='group-hover:underline'>{{ p.meta.title }}</a></h2>
-      <p class='text-sm text-gray-500 dark:text-gray-400'>{{ p.date }}</p>
-      <p class='mt-2 leading-relaxed'>{{ p.excerpt }}</p>
-    </article>
-  {% endfor %}
-</div>
+{% if home %}
+<section class='pt-6 pb-12'>
+  <div class='prose prose-lg max-w-none [&_p]:my-3 text-ink-soft'>{{ intro | safe }}</div>
+</section>
+{% endif %}
+<section>
+  <h2 class='{{ "text-xs font-medium uppercase tracking-[0.12em] text-muted mb-2" if home else "font-serif text-3xl font-semibold tracking-tight text-ink mt-6 mb-6" }}'>Writing</h2>
+  <ul class='divide-y divide-line'>
+    {% for p in posts %}
+    <li>
+      <a href='{{ p.url }}' class='group block py-6'>
+        <time datetime='{{ p.date }}' class='text-sm text-muted tabular-nums'>{{ p.date.strftime('%-d %B %Y') }}</time>
+        <h3 class='mt-1 font-serif text-xl sm:text-[1.4rem] leading-snug font-semibold tracking-tight text-ink group-hover:text-accent transition-colors'>{{ p.meta.title }}</h3>
+        {% if p.excerpt %}<p class='mt-2 text-[0.95rem] leading-relaxed text-muted'>{{ p.excerpt }}</p>{% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
 {% endblock %}

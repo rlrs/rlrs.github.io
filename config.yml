@@ -1,3 +1,11 @@
 base_url: https://rlrs.github.io
 author: Rasmus Larsen
 site_name: Rasmus' Stuff
+description: Notes on training and evaluating language models, mostly for Danish.
+github: rlrs
+intro: |
+  Hi, I'm Rasmus. I train and evaluate language models, mostly for Danish, as part of
+  [Danish Foundation Models](https://foundationmodels.dk) – among other things we released
+  `munin-7b-alpha`.
+
+  This is where I write things up when they seem worth sharing.

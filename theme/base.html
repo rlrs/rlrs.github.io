@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang='en'>
 <head>
@@ -18,12 +17,14 @@
   <link rel='icon' href='/static/img/favicon.svg' type='image/svg+xml'>
   <link rel='apple-touch-icon' href='/static/img/apple-touch-icon.png'>
   <link rel='alternate' type='application/rss+xml' title='{{ site.site_name }}' href='/feed.xml'>
+  <link rel='preload' href='/static/fonts/inter-var.woff2' as='font' type='font/woff2' crossorigin>
+  <link rel='preload' href='/static/fonts/source-serif-4-var.woff2' as='font' type='font/woff2' crossorigin>
   <link rel='stylesheet' href='/pygments.css'>
   <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css'>
   <link rel='stylesheet' href='/site.css'>
   <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js'></script>
   <script>
-    // theme toggle
+    // theme toggle: follows the OS until the visitor picks one
     (()=>{const k='theme';function set(t){document.documentElement.classList[t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'add':'remove']('dark');}
       let pref=localStorage.getItem(k)||'system';set(pref);
       window.toggleTheme=()=>{pref=document.documentElement.classList.contains('dark')?'light':'dark';localStorage.setItem(k,pref);set(pref)};})();
@@ -36,29 +37,36 @@
     });
   </script>
 </head>
-<body class='min-h-screen bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-200'>
-  <!-- Top navigation bar -->
-  <header class='sticky top-0 z-30 w-full backdrop-blur bg-white/80 dark:bg-gray-900/80 border-b border-gray-200 dark:border-gray-700'>
-    <div class='mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-14 items-center justify-between gap-4'>
-      <a href='/' class='text-lg font-semibold whitespace-nowrap'>{{ site.site_name }}</a>
-      <nav class='flex gap-4 sm:gap-6 text-sm sm:text-base'>
-        {% for pg in pages if not pg.is_post %}
-          {% if pg.meta.nav_title %}
-          <a href='{{ pg.url }}' class='hover:underline'><span class='sm:hidden'>{{ pg.meta.nav_title }}</span><span class='hidden sm:inline'>{{ pg.meta.title }}</span></a>
-          {% else %}
-          <a href='{{ pg.url }}' class='hover:underline'>{{ pg.meta.title }}</a>
-          {% endif %}
-        {% endfor %}
-        <a href='/blog/' class='hover:underline'>Blog</a>
-      </nav>
-      <button aria-label='Toggle theme' onclick='toggleTheme()' class='text-xl'>🌗</button>
-    </div>
+{% set wide = page is defined and page and page.meta.wide %}
+{% set column = 'max-w-6xl' if wide else 'max-w-2xl' %}
+<body class='min-h-screen flex flex-col font-sans antialiased'>
+  <header class='mx-auto w-full {{ column }} px-5 sm:px-6 pt-8 pb-6 flex items-center justify-between gap-4'>
+    <a href='/' class='font-serif text-xl font-semibold tracking-tight text-ink hover:text-accent transition-colors whitespace-nowrap'>{{ site.site_name }}</a>
+    <nav class='flex items-center gap-5 text-sm text-muted'>
+      {% for pg in pages if pg.in_nav %}
+        <a href='{{ pg.url }}' class='hover:text-ink transition-colors'>{{ pg.meta.nav_title or pg.meta.title }}</a>
+      {% endfor %}
+      <a href='/blog/' class='hover:text-ink transition-colors'>Writing</a>
+      <a href='/feed.xml' class='hover:text-ink transition-colors'>RSS</a>
+      <button aria-label='Toggle dark mode' onclick='toggleTheme()' class='-m-1.5 p-1.5 rounded-md hover:text-ink hover:bg-line/60 transition-colors cursor-pointer'>
+        <svg class='size-4 dark:hidden' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'/></svg>
+        <svg class='size-4 hidden dark:block' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' aria-hidden='true'><circle cx='12' cy='12' r='4'/><path d='M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4'/></svg>
+      </button>
+    </nav>
   </header>
 
-  <main class="mx-auto {{ 'max-w-5xl' if page is defined and page.meta.wide else 'max-w-3xl' }} p-6">
+  <main class='mx-auto w-full {{ column }} px-5 sm:px-6 pb-16 flex-1'>
     {% block content %}{% endblock %}
   </main>
 
-  <footer class='mx-auto max-w-4xl pb-10 px-6 text-center text-sm text-gray-500 dark:text-gray-400'>© {{ dt.datetime.now().year }} {{ site.author }}. All text is <a href='https://creativecommons.org/licenses/by-sa/4.0/'>CC-BY-SA 4.0</a>.</footer>
+  <footer class='mx-auto w-full {{ column }} px-5 sm:px-6'>
+    <div class='border-t border-line py-8 flex flex-wrap gap-x-6 gap-y-2 justify-between text-sm text-muted'>
+      <p>© {{ dt.datetime.now().year }} {{ site.author }} · Text is <a class='hover:text-ink underline decoration-line underline-offset-2' href='https://creativecommons.org/licenses/by-sa/4.0/'>CC BY-SA 4.0</a></p>
+      <p class='flex gap-5'>
+        <a class='hover:text-ink' href='/feed.xml'>RSS</a>
+        {% if site.github %}<a class='hover:text-ink' href='https://github.com/{{ site.github }}'>GitHub</a>{% endif %}
+      </p>
+    </div>
+  </footer>
 </body>
 </html>
