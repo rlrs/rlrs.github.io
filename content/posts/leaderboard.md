@@ -1,6 +1,6 @@
 ---
 title: "Quantifying LLM Base Model Quality through Compression"
-date: 2025‑04‑29
+date: 2025-04-29
 bib: leaderboard.bib
 # tags: ["llms", "compression", "evaluation", "leaderboard"]
 summary: "Introduces a Danish-centric benchmark and leaderboard that grades base LLMs by compression efficiency on fresh Danish, English and Python text."

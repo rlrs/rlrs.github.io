@@ -6,6 +6,14 @@
   <meta charset='utf-8'>
   <meta name='viewport' content='width=device-width,initial-scale=1'>
   <title>Base Model Leaderboard · Rasmus&#39; Stuff</title>
+  
+  
+  <meta property='og:site_name' content='Rasmus&#39; Stuff'>
+  <meta property='og:title' content='Base Model Leaderboard'>
+  
+  <meta property='og:type' content='website'>
+  <meta property='og:url' content='https://rlrs.dk/leaderboard.html'>
+  <link rel='alternate' type='application/rss+xml' title='Rasmus&#39; Stuff' href='/feed.xml'>
   <link rel='stylesheet' href='/pygments.css'>
   <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css'>
   <script src='https://cdn.tailwindcss.com?plugins=typography'></script>
@@ -14,7 +22,6 @@
       darkMode: 'class'
     };</script>
   <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js'></script>
-  <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js' onload='renderMathInElement(document.body)'></script>
   <style>
     .cite{
       position:relative;
@@ -53,17 +60,12 @@
     (()=>{const k='theme';function set(t){document.documentElement.classList[t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'add':'remove']('dark');}
       let pref=localStorage.getItem(k)||'system';set(pref);
       window.toggleTheme=()=>{pref=document.documentElement.classList.contains('dark')?'light':'dark';localStorage.setItem(k,pref);set(pref)};})();
-    // KaTeX auto‑render with inline "$" support
+    // KaTeX: pyssg marks math at build time as <span class="math"> (inline) / <div class="math"> (display)
     document.addEventListener('DOMContentLoaded',()=>{
-      if(typeof renderMathInElement==='function'){
-        renderMathInElement(document.body,{
-          delimiters:[
-            {left:'$$', right:'$$', display:true},
-            {left:'$', right:'$', display:false}
-          ],
-          throwOnError:false
-        });
-      }
+      if(typeof katex==='undefined') return;
+      document.querySelectorAll('.math').forEach(el=>{
+        katex.render(el.textContent, el, {displayMode: el.tagName==='DIV', throwOnError:false});
+      });
     });
   </script>
 </head>
@@ -93,6 +95,6 @@
 
   </main>
 
-  <footer class='mx-auto max-w-4xl pb-10 px-6 text-center text-sm text-gray-500 dark:text-gray-400'>© 2025 Rasmus Larsen. All text is <a href='https://creativecommons.org/licenses/by-sa/4.0/'>CC-BY-SA 4.0</a>.</footer>
+  <footer class='mx-auto max-w-4xl pb-10 px-6 text-center text-sm text-gray-500 dark:text-gray-400'>© 2026 Rasmus Larsen. All text is <a href='https://creativecommons.org/licenses/by-sa/4.0/'>CC-BY-SA 4.0</a>.</footer>
 </body>
 </html>

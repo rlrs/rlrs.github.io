@@ -5,14 +5,15 @@ Main features
 -------------
 * **Blog posts & standalone pages** handled with Markdown + YAML front‑matter.
 * **Theme‑first design** – layouts live in a `theme/` folder; swap or tweak at will.
-* **KaTeX math** left intact so the browser (via auto‑render) does the heavy lifting.
+* **KaTeX math** – `$…$` / `$$…$$` parsed at build time, typeset in the browser.
 * **Per‑page BibTeX citations** using the simple `[@key]` syntax.
 * **Syntax highlighting** via Pygments (CSS emitted once per build).
 * **RSS feed, tag listings, static asset copy, dev server** – the niceties you expect.
 
-Minimal, well‑known deps only: `markdown‑it‑py`, `PyYAML`, `Pygments`, `Jinja2`, `bibtexparser`.
+Minimal, well‑known deps only: `markdown‑it‑py`, `mdit-py-plugins`, `PyYAML`, `Pygments`, `Jinja2`,
+`bibtexparser`, `watchdog`.
 
-Run `pip install markdown-it-py PyYAML Pygments Jinja2 bibtexparser`
+Run `uv sync` (see pyproject.toml)
 
 Directory layout (opinionated but trivial to change):
 ```
@@ -27,12 +28,13 @@ myblog/
 ```
 
 Usage:
-    python pyssg.py build           # build to ./dist
-    python pyssg.py serve -p 9000   # build & live‑serve http://localhost:9000
+    python pyssg.py build           # build to ./docs
+    python pyssg.py serve -p 9000   # build, serve http://localhost:9000 & rebuild on change
 """
 
 import argparse
 import datetime as dt
+import email.utils
 import html
 import http.server
 import logging
@@ -44,13 +46,13 @@ import time
 import threading
 import socketserver
 import textwrap
-import uuid
 from typing import Any, Dict, List
 
 import bibtexparser  # type: ignore
 import jinja2  # type: ignore
 import yaml  # type: ignore
 from markdown_it import MarkdownIt  # type: ignore
+from mdit_py_plugins.dollarmath import dollarmath_plugin  # type: ignore
 from pygments import highlight  # type: ignore
 from pygments.formatters import HtmlFormatter  # type: ignore
 from pygments.lexers import TextLexer, get_lexer_by_name  # type: ignore
@@ -61,17 +63,24 @@ from watchdog.events import FileSystemEventHandler  # type: ignore
 # Markdown helpers
 # ----------------------------------------------------------------------------
 
+_PYGMENTS_STYLE = "github-dark"  # matches the dark <pre> background of Tailwind's prose
+
 def _highlight(code: str, lang: str, *_):
     try:
         lexer = get_lexer_by_name(lang)
     except Exception:
         lexer = TextLexer()
-    return highlight(code, lexer, HtmlFormatter(nowrap=True))
+    body = highlight(code, lexer, HtmlFormatter(nowrap=True))
+    cls = f' class="language-{html.escape(lang)}"' if lang else ""
+    return f'<pre class="highlight"><code{cls}>{body}</code></pre>\n'
 
-_MD = MarkdownIt("commonmark", {"linkify": True, "html": True}).enable("table")
+_MD = MarkdownIt("commonmark", {"html": True}).enable("table")
 _MD.options["highlight"] = _highlight
+# Emits <span class="math inline"> / <div class="math block"> with escaped TeX, which
+# theme/base.html typesets with KaTeX. allow_space/allow_digits off so prose like
+# "$5 and $10" stays plain text.
+dollarmath_plugin(_MD, allow_space=False, allow_digits=False)
 
-_MATH_PAT = re.compile(r"(?P<delim>\${1,2})(?P<math>.+?)\1", re.S)
 _CITE_PAT = re.compile(r"\[@([^\]]+)\]")
 
 
@@ -86,13 +95,31 @@ class Page:
         self.html = html
         self.is_post = is_post
         self.slug = meta.get("slug") or src.stem
-        self.date = meta.get("date") or src.stat().st_mtime
+        self.date = self._parse_date(meta.get("date"), src)
         self.url = f"/blog/{self.slug}.html" if is_post else f"/{self.slug}.html"
         self.excerpt = meta.get("summary") or self._make_excerpt()
 
+    @staticmethod
+    def _parse_date(raw: Any, src: pathlib.Path) -> dt.date:
+        """Front-matter date as a `date`; falls back to the file's mtime."""
+        if isinstance(raw, dt.datetime):
+            return raw.date()
+        if isinstance(raw, dt.date):
+            return raw
+        if raw is None:
+            return dt.date.fromtimestamp(src.stat().st_mtime)
+        # YAML only parses ASCII "2025-04-29" as a date; editors and LLMs like to
+        # paste look-alike hyphens (e.g. U+2011), which would leave it a string.
+        text = re.sub(r"[\u2010-\u2015\u2212]", "-", str(raw)).strip()
+        try:
+            return dt.date.fromisoformat(text[:10])
+        except ValueError:
+            raise ValueError(f"{src}: date {raw!r} is not YYYY-MM-DD") from None
+
     def _make_excerpt(self, words: int = 35):
-        plain = re.sub(r"[`*_>#+-]", "", self.body_md)
-        return " ".join(plain.split()[:words]) + " …"
+        prose = re.sub(r'<pre.*?</pre>|<(span|div) class="math.*?</\1>', " ", self.html, flags=re.S)
+        plain = html.unescape(re.sub(r"<[^>]+>", " ", prose)).split()
+        return " ".join(plain[:words]) + " …" if plain else ""
 
 
 # ----------------------------------------------------------------------------
@@ -116,6 +143,7 @@ class Site:
 
     # ---------------------------------------------------------------- build
     def build(self):
+        self._clean_dist()
         self._discover()
         self._copy_static()
         self._emit_pygments_css()
@@ -126,7 +154,21 @@ class Site:
         logging.info("Build finished → %s", self.dist)
 
     # ----------------------------------------------------------- discovery
+    _DIST_KEEP = {"CNAME", ".nojekyll"}
+
+    def _clean_dist(self):
+        # Empty the output dir (not the dir itself – `serve` has chdir'd into it) so
+        # deleted pages and assets don't linger. Keep files GitHub Pages relies on.
+        for child in self.dist.iterdir():
+            if child.name in self._DIST_KEEP:
+                continue
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+
     def _discover(self):
+        self.pages = []
         content = self.root / "content"
         for md in content.rglob("*.md"):
             is_post = md.parts[-2] == "posts"
@@ -144,18 +186,7 @@ class Site:
         return {}, text
 
     def _md_to_html(self, md_text: str):
-        placeholders: Dict[str, str] = {}
-
-        def _stash(m):
-            tok = f"@@MATH_{uuid.uuid4().hex}@@"
-            placeholders[tok] = m.group(0)
-            return tok
-
-        tmp = _MATH_PAT.sub(_stash, md_text)
-        html_out = _MD.render(tmp)
-        for tok, raw in placeholders.items():
-            html_out = html_out.replace(tok, raw)
-        return html_out
+        return _MD.render(md_text)
 
     # ----------------------------------------------------------- citations
     def _parse_author_name(self, raw: str) -> str:
@@ -269,7 +300,7 @@ class Site:
         tmpl = self.env.get_template("tag.html")
         tag_dir = self.dist / "blog" / "tags"
         for tag, pages in by_tag.items():
-            out = tmpl.render(tag=tag, pages=pages, site=self.config, pages_all=self.pages, today=dt.date.today())
+            out = tmpl.render(tag=tag, tag_pages=pages, pages=self.pages, site=self.config, today=dt.date.today())
             dest = tag_dir / f"{tag}.html"
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(out, "utf8")
@@ -282,7 +313,8 @@ class Site:
           <item>
             <title>{escape(p.meta.get('title',''))}</title>
             <link>{self.config.get('base_url','')}{p.url}</link>
-            <pubDate>{p.date}</pubDate>
+            <guid>{self.config.get('base_url','')}{p.url}</guid>
+            <pubDate>{email.utils.format_datetime(dt.datetime.combine(p.date, dt.time(), dt.timezone.utc))}</pubDate>
             <description><![CDATA[{p.excerpt}]]></description>
           </item>""") for p in posts]
         rss = textwrap.dedent(f"""<?xml version='1.0' encoding='UTF-8'?>
@@ -301,7 +333,7 @@ class Site:
             shutil.copytree(static, self.dist / "static", dirs_exist_ok=True)
 
     def _emit_pygments_css(self):
-        (self.dist / "pygments.css").write_text(HtmlFormatter().get_style_defs(".codehilite"), "utf8")
+        (self.dist / "pygments.css").write_text(HtmlFormatter(style=_PYGMENTS_STYLE).get_style_defs("pre.highlight"), "utf8")
 
 # ----------------------------------------------------------------------------
 # Live‑reload dev server using watchdog

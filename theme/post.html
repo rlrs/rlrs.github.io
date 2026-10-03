@@ -3,7 +3,7 @@
 {% block content %}
 <article class='prose dark:prose-invert max-w-prose'>
   <h1>{{ page.meta.title }}</h1>
-  <p class='text-sm text-gray-500 dark:text-gray-400'>{{ page.meta.date }}</p>
+  <p class='text-sm text-gray-500 dark:text-gray-400'>{{ page.date }}</p>
   {{ page.html | safe }}
   {% if page.meta.tags %}
   <p class='mt-8'>

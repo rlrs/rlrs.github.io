@@ -6,6 +6,14 @@
   <meta charset='utf-8'>
   <meta name='viewport' content='width=device-width,initial-scale=1'>
   <title>Quantifying LLM Base Model Quality through Compression · Rasmus&#39; Stuff</title>
+  
+  <meta name='description' content='Introduces a Danish-centric benchmark and leaderboard that grades base LLMs by compression efficiency on fresh Danish, English and Python text.'>
+  <meta property='og:site_name' content='Rasmus&#39; Stuff'>
+  <meta property='og:title' content='Quantifying LLM Base Model Quality through Compression'>
+  <meta property='og:description' content='Introduces a Danish-centric benchmark and leaderboard that grades base LLMs by compression efficiency on fresh Danish, English and Python text.'>
+  <meta property='og:type' content='article'>
+  <meta property='og:url' content='https://rlrs.dk/blog/leaderboard.html'>
+  <link rel='alternate' type='application/rss+xml' title='Rasmus&#39; Stuff' href='/feed.xml'>
   <link rel='stylesheet' href='/pygments.css'>
   <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css'>
   <script src='https://cdn.tailwindcss.com?plugins=typography'></script>
@@ -14,7 +22,6 @@
       darkMode: 'class'
     };</script>
   <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js'></script>
-  <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js' onload='renderMathInElement(document.body)'></script>
   <style>
     .cite{
       position:relative;
@@ -53,17 +60,12 @@
     (()=>{const k='theme';function set(t){document.documentElement.classList[t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'add':'remove']('dark');}
       let pref=localStorage.getItem(k)||'system';set(pref);
       window.toggleTheme=()=>{pref=document.documentElement.classList.contains('dark')?'light':'dark';localStorage.setItem(k,pref);set(pref)};})();
-    // KaTeX auto‑render with inline "$" support
+    // KaTeX: pyssg marks math at build time as <span class="math"> (inline) / <div class="math"> (display)
     document.addEventListener('DOMContentLoaded',()=>{
-      if(typeof renderMathInElement==='function'){
-        renderMathInElement(document.body,{
-          delimiters:[
-            {left:'$$', right:'$$', display:true},
-            {left:'$', right:'$', display:false}
-          ],
-          throwOnError:false
-        });
-      }
+      if(typeof katex==='undefined') return;
+      document.querySelectorAll('.math').forEach(el=>{
+        katex.render(el.textContent, el, {displayMode: el.tagName==='DIV', throwOnError:false});
+      });
     });
   </script>
 </head>
@@ -86,7 +88,7 @@
     
 <article class='prose dark:prose-invert max-w-prose'>
   <h1>Quantifying LLM Base Model Quality through Compression</h1>
-  <p class='text-sm text-gray-500 dark:text-gray-400'>2025‑04‑29</p>
+  <p class='text-sm text-gray-500 dark:text-gray-400'>2025-04-29</p>
   <p><strong>TL;DR:</strong> I introduce a Danish-centric benchmark and public <a href="/leaderboard.html">leaderboard</a> that scores base LLMs by how well they compress unseen Danish, English, and Python text (lower = better) - an information-theoretic lens on predictive power that avoids most training-data contamination. On this metric, models as small as <code>munin-7b-alpha</code> rival or beat much larger baselines, several European models are in the game, and Gemma 3 tops the board.</p>
 <hr />
 <h2>Leaderboard Snapshot</h2>
@@ -170,7 +172,7 @@
 <p>Since I was going to build this anyways, I figured it makes sense to publish it for your (potential) enjoyment. This is the only benchmark of its kind in Danish, to my knowledge. Of course, there's also <a href="https://euroeval.com/leaderboards/">EuroEval</a> (formerly ScandEval) if you want to know which models are good at Danish. While useful, I believe existing task-specific evaluations are significantly less general than what we measure here. They are also significantly easier to intentionally or unintentionally hillclimb, and all of the benchmarks are extremely likely to already be in training sets. Nonetheless, to the extent that you care about specific skills tested in such benchmarks, <em>and</em> you believe the models are not overfit to the benchmarks, they might still have their uses. Empirically, we do see many of the best (human-preferred) models topping the EuroEval leaderboards. This benchmark is complementary and focused on base models only.</p>
 <h2>Methodology</h2>
 <p><strong>Corpus:</strong> Finding novel text in a relatively low-resource language such as Danish is a challenge, especially for model training. For this benchmark, however, we have the luxury of being able to use copyrighted data with no concern due to the EU DSM Article 3. Hence, I gathered four novel text sources published solely after January 1 2025: Online news articles in Danish, Wikipedia articles in Danish and English, and Github repositories containing Python code. These represent the online-available sources of the dataset, and so it's very important that they're strictly newer than the model training cutoff date. For text that generally isn't available online, I find it less important to consider the publication date. Hence, I use Danish e-books from my personal collection, including both older and newer fiction, and some relatively new non-fiction. These texts are not easily available online (certainly not legally), and so it is less likely that models have been trained on them. While they <em>are</em> available through sources like Anna's Archive, my guess is that existing models are more likely to include only English subsets. Note that the evaluation corpus will <em>not</em> be publicly available; you won't be able to compare your own models with my scores. Feel free to build your own corpus.</p>
-<p><strong>Evaluation pipeline:</strong> <code>raw text chunks -&gt; tokenizer -&gt; log probs -&gt; entropy code-length -&gt; compression rate</code>. The expression for the compression rate for a sequence $x_{1:N}$ is $C = \frac{S_{nats}}{8 B \ln(2)} \cdot 100$ where $S_{nats} = -\sum_{i}^N\ln p_\theta(x_i | x_{\lt i})$ is the negative log-probabilities summed in units of nats, and $B$ is the number of bytes in the sequence. I use compression rate because it feels more intuitive than other options, such as perplexity or bits-per-byte; everyone can relate to “If I encode the text with the model, the size shrinks to $C\%$.” The tokenizer, which by itself is a compressor, is treated as part of the system and we measure the end-to-end compression. One choice that must be made is the sequence length $N$, and currently I've chosen fixed chunks of 1024 tokens. It could be useful to compare e.g. with a much higher value of $N$. Finally, the compression rate is calculated <em>per-dataset</em>. This reveals interesting things about model performance and gives insights into what data the models plausibly have been trained on.</p>
+<p><strong>Evaluation pipeline:</strong> <code>raw text chunks -&gt; tokenizer -&gt; log probs -&gt; entropy code-length -&gt; compression rate</code>. The expression for the compression rate for a sequence <span class="math inline">x_{1:N}</span> is <span class="math inline">C = \frac{S_{nats}}{8 B \ln(2)} \cdot 100</span> where <span class="math inline">S_{nats} = -\sum_{i}^N\ln p_\theta(x_i | x_{\lt i})</span> is the negative log-probabilities summed in units of nats, and <span class="math inline">B</span> is the number of bytes in the sequence. I use compression rate because it feels more intuitive than other options, such as perplexity or bits-per-byte; everyone can relate to “If I encode the text with the model, the size shrinks to <span class="math inline">C\%</span>.” The tokenizer, which by itself is a compressor, is treated as part of the system and we measure the end-to-end compression. One choice that must be made is the sequence length <span class="math inline">N</span>, and currently I've chosen fixed chunks of 1024 tokens. It could be useful to compare e.g. with a much higher value of <span class="math inline">N</span>. Finally, the compression rate is calculated <em>per-dataset</em>. This reveals interesting things about model performance and gives insights into what data the models plausibly have been trained on.</p>
 <h2>Compression ↔ Prediction ↔? Intelligence</h2>
 <p>So, the link between compression and prediction is well-known and I won't bore you, my dear reader, with it. Of course you have read Shannon <a class="cite" data-ref="Shannon, C. E. (1948) A mathematical theory of communication." href="#ref-shannon1948mathematical">[1]</a> saying that optimal compression = optimal prediction. However, is prediction really intelligence? And is that really what we're measuring? Let's investigate a bit.</p>
 <p>Marcus Hutter and Shane Legg have explored &quot;universal intelligence&quot; <a class="cite" data-ref="Legg, S., Hutter, M. (2007) Universal Intelligence: A Definition of Machine Intelligence." href="#ref-legg2007universal">[2]</a> for many years, and they have also collected various definitions of intelligence <a class="cite" data-ref="Legg, S., Hutter, M. (2007) A Collection of Definitions of Intelligence." href="#ref-legg2007collection">[3]</a>. The universal intelligence of an agent is formalised as the weighted average of the total reward that the agent can obtain in every computable, reward-summable environment. This theory exactly relates better prediction to greater intelligence, but it also purposefully goes beyond mere passive prediction. We're getting somewhere, but it's very theoretical and not a perfect fit for LLMs.</p>
@@ -257,6 +259,6 @@ Very similarly, Gadre et al. <a class="cite" data-ref="Gadre, S. Y., Smyrnis, G.
 
   </main>
 
-  <footer class='mx-auto max-w-4xl pb-10 px-6 text-center text-sm text-gray-500 dark:text-gray-400'>© 2025 Rasmus Larsen. All text is <a href='https://creativecommons.org/licenses/by-sa/4.0/'>CC-BY-SA 4.0</a>.</footer>
+  <footer class='mx-auto max-w-4xl pb-10 px-6 text-center text-sm text-gray-500 dark:text-gray-400'>© 2026 Rasmus Larsen. All text is <a href='https://creativecommons.org/licenses/by-sa/4.0/'>CC-BY-SA 4.0</a>.</footer>
 </body>
 </html>
