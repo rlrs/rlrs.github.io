@@ -30,7 +30,7 @@ myblog/
 ```
 
 Usage:
-    python pyssg.py build           # build to ./docs
+    python pyssg.py build           # build to ./dist
     python pyssg.py serve -p 9000   # build, serve http://localhost:9000 & rebuild on change
 """
 
@@ -136,7 +136,7 @@ class Site:
     def __init__(self, root: pathlib.Path):
         self.root = root
         self.config = self._load_config()
-        self.dist = root / "docs"
+        self.dist = root / "dist"
         self.dist.mkdir(exist_ok=True)
         self.pages: List[Page] = []
         self.env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(root / "theme")), autoescape=True)
@@ -163,14 +163,10 @@ class Site:
         logging.info("Build finished → %s", self.dist)
 
     # ----------------------------------------------------------- discovery
-    _DIST_KEEP = {"CNAME", ".nojekyll"}
-
     def _clean_dist(self):
         # Empty the output dir (not the dir itself – `serve` has chdir'd into it) so
-        # deleted pages and assets don't linger. Keep files GitHub Pages relies on.
+        # deleted pages and assets don't linger.
         for child in self.dist.iterdir():
-            if child.name in self._DIST_KEEP:
-                continue
             if child.is_dir():
                 shutil.rmtree(child)
             else:

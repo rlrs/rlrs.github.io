@@ -7,3 +7,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Build output (deployed by .github/workflows/deploy.yml)
+dist/
