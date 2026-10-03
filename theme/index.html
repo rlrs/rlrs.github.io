@@ -1,22 +1,59 @@
 {% extends 'base.html' %}
+{% set label = 'text-xs font-medium uppercase tracking-[0.12em] text-muted' %}
+
+{% macro post_list(items) %}
+<ul class='divide-y divide-line'>
+  {% for p in items %}
+  <li>
+    <a href='{{ p.url }}' class='group block py-6'>
+      <time datetime='{{ p.date }}' class='text-sm text-muted tabular-nums'>{{ p.date.strftime('%-d %B %Y') }}</time>
+      <h3 class='mt-1 font-serif text-xl sm:text-[1.4rem] leading-snug font-semibold tracking-tight text-ink group-hover:text-accent transition-colors text-balance'>{{ p.meta.title }}</h3>
+      {% if p.excerpt %}<p class='mt-2 text-[0.95rem] leading-relaxed text-muted text-pretty'>{{ p.excerpt }}</p>{% endif %}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+
 {% block content %}
 {% if home %}
-<section class='pt-6 pb-12'>
-  <div class='prose prose-lg max-w-none [&_p]:my-3 text-ink-soft'>{{ intro | safe }}</div>
+<section class='pt-8 sm:pt-12 pb-14'>
+  {% if site.greeting %}
+  <h1 class='font-serif text-[2.4rem] sm:text-5xl leading-tight font-semibold tracking-tight text-ink'>{{ site.greeting }}<span class='text-accent'>.</span></h1>
+  {% endif %}
+  <div class='mt-5 prose prose-lg max-w-none [&_p]:my-3 text-pretty'>{{ intro | safe }}</div>
 </section>
-{% endif %}
+
 <section>
-  <h2 class='{{ "text-xs font-medium uppercase tracking-[0.12em] text-muted mb-2" if home else "font-serif text-3xl font-semibold tracking-tight text-ink mt-6 mb-6" }}'>Writing</h2>
-  <ul class='divide-y divide-line'>
-    {% for p in posts %}
+  <h2 class='{{ label }}'>Writing</h2>
+  {{ post_list(posts[:5]) }}
+  {% if posts | length > 5 %}
+  <a href='/blog/' class='mt-2 inline-block text-sm text-muted hover:text-accent transition-colors'>All writing →</a>
+  {% endif %}
+</section>
+
+{% if site.projects %}
+<section class='mt-14'>
+  <h2 class='{{ label }}'>Projects</h2>
+  <ul class='mt-4 grid gap-3'>
+    {% for pr in site.projects %}
+    {% set external = pr.url.startswith('http') %}
     <li>
-      <a href='{{ p.url }}' class='group block py-6'>
-        <time datetime='{{ p.date }}' class='text-sm text-muted tabular-nums'>{{ p.date.strftime('%-d %B %Y') }}</time>
-        <h3 class='mt-1 font-serif text-xl sm:text-[1.4rem] leading-snug font-semibold tracking-tight text-ink group-hover:text-accent transition-colors'>{{ p.meta.title }}</h3>
-        {% if p.excerpt %}<p class='mt-2 text-[0.95rem] leading-relaxed text-muted'>{{ p.excerpt }}</p>{% endif %}
+      <a href='{{ pr.url }}' class='group flex items-start gap-4 rounded-xl border border-line bg-surface px-5 py-4 hover:border-accent/50 transition-colors'>
+        <span class='min-w-0 flex-1'>
+          <span class='block font-medium text-ink group-hover:text-accent transition-colors'>{{ pr.title }}</span>
+          <span class='mt-0.5 block text-sm leading-relaxed text-muted'>{{ pr.description }}</span>
+        </span>
+        <span class='mt-0.5 text-muted group-hover:text-accent transition-colors' aria-hidden='true'>{{ '↗' if external else '→' }}</span>
       </a>
     </li>
     {% endfor %}
   </ul>
 </section>
+{% endif %}
+
+{% else %}
+<h1 class='font-serif text-3xl font-semibold tracking-tight text-ink mt-6 mb-2'>Writing</h1>
+{{ post_list(posts) }}
+{% endif %}
 {% endblock %}

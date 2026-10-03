@@ -25,7 +25,7 @@
 
 /* ---- design tokens: light by default, swapped under .dark ---- */
 :root {
-  --paper: #fbfaf7;
+  --paper: #fdfcfa;
   --surface: #ffffff;
   --ink: #1d1c1a;
   --ink-soft: #3b3935;
@@ -34,7 +34,7 @@
   --accent: #0f766e;
   --accent-strong: #115e59;
   --accent-soft: #e3f1ee;
-  --code-bg: #f4f1eb;
+  --code-bg: #f5f3ee;
   --lb-good: #8fcbc1;   /* leaderboard: best value in a column */
   --lb-mid: #e2f0ec;
 }

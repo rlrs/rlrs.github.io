@@ -49,7 +49,6 @@ import time
 import threading
 import socketserver
 import sys
-import textwrap
 from typing import Any, Dict, List
 
 import bibtexparser  # type: ignore
@@ -168,6 +167,7 @@ class Site:
     # ---------------------------------------------------------------- build
     def build(self):
         started = time.time()
+        self.config = self._load_config()  # re-read so `serve` picks up config.yml edits
         self._discover()
         self._copy_static()
         self._emit_pygments_css()
@@ -331,7 +331,7 @@ class Site:
         pad = 80
         # colours mirror the light theme tokens in theme/site.css
         ink, muted, accent = "#1d1c1a", "#75716a", "#0f766e"
-        img = Image.new("RGB", (w, h), "#fbfaf7")      # --paper
+        img = Image.new("RGB", (w, h), "#fdfcfa")      # --paper
         d = ImageDraw.Draw(img)
         d.rectangle([0, 0, w, 10], fill=accent)
         small = ImageFont.truetype(str(regular), 30)
@@ -416,23 +416,40 @@ class Site:
 
     # ------------------------------------------------------------ feed
     def _render_feed(self):
-        from xml.sax.saxutils import escape
+        from xml.sax.saxutils import escape, quoteattr
+        base = self.config.get("base_url", "")
         posts = sorted([p for p in self.pages if p.is_post], key=lambda x: x.date, reverse=True)[:20]
-        items = [textwrap.dedent(f"""
-          <item>
-            <title>{escape(p.meta.get('title',''))}</title>
-            <link>{self.config.get('base_url','')}{p.url}</link>
-            <guid>{self.config.get('base_url','')}{p.url}</guid>
-            <pubDate>{email.utils.format_datetime(dt.datetime.combine(p.date, dt.time(), dt.timezone.utc))}</pubDate>
-            <description><![CDATA[{p.excerpt}]]></description>
-          </item>""") for p in posts]
-        rss = textwrap.dedent(f"""<?xml version='1.0' encoding='UTF-8'?>
-            <rss version='2.0'><channel>
-              <title>{escape(self.config.get('site_name','My Blog'))}</title>
-              <link>{self.config.get('base_url','')}</link>
-              <description>{escape(self.config.get('description',''))}</description>
-              {''.join(items)}
-            </channel></rss>""")
+
+        def rfc822(d: dt.date) -> str:
+            return email.utils.format_datetime(dt.datetime.combine(d, dt.time(), dt.timezone.utc))
+
+        def absolute(body: str, page_url: str) -> str:
+            # feed readers have no base URL: make /site and #fragment links absolute
+            body = re.sub(r"""(href|src)=(["'])/(?!/)""", rf"\1=\2{base}/", body)
+            return re.sub(r"""href=(["'])#""", rf"href=\1{base}{page_url}#", body)
+
+        items = "".join(f"""
+    <item>
+      <title>{escape(p.meta.get("title", p.slug))}</title>
+      <link>{base}{p.url}</link>
+      <guid isPermaLink="true">{base}{p.url}</guid>
+      <pubDate>{rfc822(p.date)}</pubDate>
+      <description>{escape(p.excerpt)}</description>
+      <content:encoded>{escape(absolute(p.html, p.url))}</content:encoded>
+    </item>""" for p in posts)
+        updated = rfc822(max((p.date for p in posts), default=dt.date.today()))
+        rss = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>{escape(self.config.get("site_name", "My Blog"))}</title>
+    <link>{base}/</link>
+    <description>{escape(self.config.get("description", ""))}</description>
+    <language>{escape(self.config.get("language", "en"))}</language>
+    <lastBuildDate>{updated}</lastBuildDate>
+    <atom:link href={quoteattr(base + "/feed.xml")} rel="self" type="application/rss+xml"/>{items}
+  </channel>
+</rss>
+"""
         (self.dist / "feed.xml").write_text(rss, "utf8")
 
     # ------------------------------------------------------ asset helpers
