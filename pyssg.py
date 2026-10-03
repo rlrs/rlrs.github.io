@@ -9,6 +9,7 @@ Main features
 * **Per‑page BibTeX citations** using the simple `[@key]` syntax.
 * **Syntax highlighting** via Pygments (CSS emitted once per build).
 * **Tailwind CSS** compiled from `theme/site.css` by the standalone CLI (no Node needed).
+* **Social cards** – a 1200×630 Open Graph image per page, drawn with Pillow.
 * **RSS feed, tag listings, static asset copy, dev server** – the niceties you expect.
 
 Minimal, well‑known deps only: `markdown‑it‑py`, `mdit-py-plugins`, `PyYAML`, `Pygments`, `Jinja2`,
@@ -55,6 +56,7 @@ import yaml  # type: ignore
 from markdown_it import MarkdownIt  # type: ignore
 from mdit_py_plugins.dollarmath import dollarmath_plugin  # type: ignore
 import pytailwindcss  # type: ignore
+from PIL import Image, ImageDraw, ImageFont  # type: ignore
 from pygments import highlight  # type: ignore
 from pygments.formatters import HtmlFormatter  # type: ignore
 from pygments.lexers import TextLexer, get_lexer_by_name  # type: ignore
@@ -102,6 +104,7 @@ class Page:
         self.date = self._parse_date(meta.get("date"), src)
         self.url = f"/blog/{self.slug}.html" if is_post else f"/{self.slug}.html"
         self.excerpt = meta.get("summary") or self._make_excerpt()
+        self.og_image = ""  # set by Site._render_og_images
 
     @staticmethod
     def _parse_date(raw: Any, src: pathlib.Path) -> dt.date:
@@ -152,6 +155,7 @@ class Site:
         self._copy_static()
         self._emit_pygments_css()
         self._build_css()
+        self._render_og_images()
         self._render_pages()
         self._render_indexes()
         self._render_tags()
@@ -274,6 +278,57 @@ class Site:
             )
         return html_text
 
+
+    # ------------------------------------------------------- social cards
+    _OG_SIZE = (1200, 630)
+
+    def _render_og_images(self):
+        """Draw an Open Graph card per page (unless front matter sets `image:`) and one for the index."""
+        site_name = self.config.get("site_name", "")
+        domain = re.sub(r"^https?://", "", self.config.get("base_url", ""))
+        for pg in self.pages:
+            if pg.meta.get("image"):
+                pg.og_image = pg.meta["image"]
+                continue
+            pg.og_image = "/og" + pg.url.removesuffix(".html") + ".png"
+            footer = f"{domain}  ·  {pg.date:%-d %B %Y}" if pg.is_post else domain
+            self._draw_og_card(pg.meta.get("title", pg.slug), site_name, footer, self.dist / pg.og_image.lstrip("/"))
+        self._draw_og_card(site_name, "", self.config.get("description") or domain, self.dist / "og" / "index.png")
+
+    def _draw_og_card(self, title: str, kicker: str, footer: str, dest: pathlib.Path):
+        fonts = self.root / "theme" / "fonts"
+        bold, regular = fonts / "Inter-Bold.ttf", fonts / "Inter-Regular.ttf"
+        w, h = self._OG_SIZE
+        pad = 80
+        img = Image.new("RGB", (w, h), "#f9fafb")      # Tailwind gray-50, like the site
+        d = ImageDraw.Draw(img)
+        d.rectangle([0, 0, w, 12], fill="#3b82f6")      # blue-500 accent
+        small = ImageFont.truetype(str(regular), 32)
+        if kicker:
+            d.text((pad, pad), kicker, font=small, fill="#6b7280")
+        # largest title size (72 → 44px) that wraps into at most 4 lines
+        for size in range(72, 43, -4):
+            font = ImageFont.truetype(str(bold), size)
+            lines = self._wrap(title, font, w - 2 * pad)
+            if len(lines) <= 4:
+                break
+        line_h = round(size * 1.2)
+        top = (h - line_h * len(lines)) // 2
+        for i, line in enumerate(lines):
+            d.text((pad, top + i * line_h), line, font=font, fill="#111827")
+        d.text((pad, h - pad - 32), footer, font=small, fill="#6b7280")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        img.save(dest, optimize=True)
+
+    @staticmethod
+    def _wrap(text: str, font: Any, width: int) -> List[str]:
+        lines: List[str] = []
+        for word in text.split():
+            if lines and font.getlength(f"{lines[-1]} {word}") <= width:
+                lines[-1] += f" {word}"
+            else:
+                lines.append(word)
+        return lines
 
     # ---------------------------------------------------------- rendering
     def _render_pages(self):

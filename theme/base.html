@@ -12,6 +12,11 @@
   {% if description %}<meta property='og:description' content='{{ description }}'>{% endif %}
   <meta property='og:type' content='{{ "article" if page and page.is_post else "website" }}'>
   {% if page %}<meta property='og:url' content='{{ site.base_url }}{{ page.url }}'>{% endif %}
+  {% set og_image = page.og_image if page else '/og/index.png' %}
+  <meta property='og:image' content='{{ og_image if og_image.startswith('http') else site.base_url ~ og_image }}'>
+  <meta name='twitter:card' content='summary_large_image'>
+  <link rel='icon' href='/static/img/favicon.svg' type='image/svg+xml'>
+  <link rel='apple-touch-icon' href='/static/img/apple-touch-icon.png'>
   <link rel='alternate' type='application/rss+xml' title='{{ site.site_name }}' href='/feed.xml'>
   <link rel='stylesheet' href='/pygments.css'>
   <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css'>
@@ -34,11 +39,15 @@
 <body class='min-h-screen bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-200'>
   <!-- Top navigation bar -->
   <header class='sticky top-0 z-30 w-full backdrop-blur bg-white/80 dark:bg-gray-900/80 border-b border-gray-200 dark:border-gray-700'>
-    <div class='mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-14 items-center justify-between'>
+    <div class='mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-14 items-center justify-between gap-4'>
       <a href='/' class='text-lg font-semibold whitespace-nowrap'>{{ site.site_name }}</a>
-      <nav class='hidden md:flex space-x-6'>
+      <nav class='flex gap-4 sm:gap-6 text-sm sm:text-base'>
         {% for pg in pages if not pg.is_post %}
+          {% if pg.meta.nav_title %}
+          <a href='{{ pg.url }}' class='hover:underline'><span class='sm:hidden'>{{ pg.meta.nav_title }}</span><span class='hidden sm:inline'>{{ pg.meta.title }}</span></a>
+          {% else %}
           <a href='{{ pg.url }}' class='hover:underline'>{{ pg.meta.title }}</a>
+          {% endif %}
         {% endfor %}
         <a href='/blog/' class='hover:underline'>Blog</a>
       </nav>
