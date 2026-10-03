@@ -8,6 +8,7 @@ Main features
 * **KaTeX math** – `$…$` / `$$…$$` parsed at build time, typeset in the browser.
 * **Per‑page BibTeX citations** using the simple `[@key]` syntax.
 * **Syntax highlighting** via Pygments (CSS emitted once per build).
+* **Tailwind CSS** compiled from `theme/site.css` by the standalone CLI (no Node needed).
 * **RSS feed, tag listings, static asset copy, dev server** – the niceties you expect.
 
 Minimal, well‑known deps only: `markdown‑it‑py`, `mdit-py-plugins`, `PyYAML`, `Pygments`, `Jinja2`,
@@ -53,6 +54,7 @@ import jinja2  # type: ignore
 import yaml  # type: ignore
 from markdown_it import MarkdownIt  # type: ignore
 from mdit_py_plugins.dollarmath import dollarmath_plugin  # type: ignore
+import pytailwindcss  # type: ignore
 from pygments import highlight  # type: ignore
 from pygments.formatters import HtmlFormatter  # type: ignore
 from pygments.lexers import TextLexer, get_lexer_by_name  # type: ignore
@@ -80,6 +82,8 @@ _MD.options["highlight"] = _highlight
 # theme/base.html typesets with KaTeX. allow_space/allow_digits off so prose like
 # "$5 and $10" stays plain text.
 dollarmath_plugin(_MD, allow_space=False, allow_digits=False)
+
+_TAILWIND_VERSION = "v4.3.3"  # pinned so local and CI builds match
 
 _CITE_PAT = re.compile(r"\[@([^\]]+)\]")
 
@@ -147,6 +151,7 @@ class Site:
         self._discover()
         self._copy_static()
         self._emit_pygments_css()
+        self._build_css()
         self._render_pages()
         self._render_indexes()
         self._render_tags()
@@ -334,6 +339,16 @@ class Site:
 
     def _emit_pygments_css(self):
         (self.dist / "pygments.css").write_text(HtmlFormatter(style=_PYGMENTS_STYLE).get_style_defs("pre.highlight"), "utf8")
+
+    def _build_css(self):
+        src = self.root / "theme" / "site.css"
+        if not src.exists():
+            return
+        # Downloads the pinned standalone Tailwind binary on first use.
+        pytailwindcss.run(
+            ["-i", str(src), "-o", str(self.dist / "site.css"), "--minify"],
+            cwd=self.root, auto_install=True, version=_TAILWIND_VERSION,
+        )
 
 # ----------------------------------------------------------------------------
 # Live‑reload dev server using watchdog

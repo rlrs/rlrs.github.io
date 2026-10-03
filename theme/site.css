@@ -1,0 +1,52 @@
+/* Tailwind input – compiled by pyssg.py into docs/site.css */
+@import "tailwindcss" source(none);
+@plugin "@tailwindcss/typography";
+
+@source "../theme";
+@source "../content";
+@source "../static";
+
+/* dark mode follows the .dark class set by the theme toggle in base.html */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind v3 default border colour (v4 uses currentColor) */
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
+
+/* ---- citation tooltips ([@key] in posts) ---- */
+.cite {
+  position: relative;
+  display: inline-block;
+}
+.cite::after {
+  content: attr(data-ref);
+  position: absolute;
+  width: 20rem;
+  top: 100%;
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: .25rem .5rem;
+  font-size: .75rem;
+  white-space: pre-wrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .1);
+  opacity: 0;
+  transform: translateY(.5rem);
+  transition: opacity .1s ease, transform .1s ease;
+  color: #111;
+  pointer-events: none;
+  z-index: 30;
+}
+.cite:hover::after,
+.cite:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.prose h2,
+.prose h3 { scroll-margin-top: 5.5rem; }
+
+html, body { overflow-x: hidden; }

@@ -10,6 +10,7 @@ dependencies = [
     "markdown-it-py>=3.0.0",
     "mdit-py-plugins>=0.6.1",
     "pygments>=2.19.1",
+    "pytailwindcss>=0.2.0",
     "pyyaml>=6.0.2",
     "watchdog>=6.0.0",
 ]

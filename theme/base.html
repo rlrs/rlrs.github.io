@@ -15,45 +15,8 @@
   <link rel='alternate' type='application/rss+xml' title='{{ site.site_name }}' href='/feed.xml'>
   <link rel='stylesheet' href='/pygments.css'>
   <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css'>
-  <script src='https://cdn.tailwindcss.com?plugins=typography'></script>
-  <script>
-    window.tailwind.config = {
-      darkMode: 'class'
-    };</script>
+  <link rel='stylesheet' href='/site.css'>
   <script defer src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js'></script>
-  <style>
-    .cite{
-      position:relative;
-      display:inline-block;
-      color:#0070f3;
-      text-decoration:none
-    }
-    .cite::after{
-      content:attr(data-ref);
-      position:absolute;
-      width: 20rem;
-      top:100%;
-      background:#fff;
-      border:1px solid #ddd;
-      padding:.25rem .5rem;
-      font-size:.75rem;
-      white-space: pre-wrap;
-      box-shadow:0 2px 4px rgba(0,0,0,.1);
-      opacity:0;
-      transform: translateY(.5rem);
-      transition:opacity .1s ease,transform .1s ease;
-      color:#111;
-      pointer-events:none;
-      z-index: 30;
-    }
-    .cite:hover::after,.cite:focus-visible::after{
-      opacity:1;
-      transform:translateY(0);
-      pointer-events:auto
-    }
-    .prose h2,.prose h3{scroll-margin-top:5.5rem}
-    html, body { overflow-x: hidden; }
-  </style>
   <script>
     // theme toggle
     (()=>{const k='theme';function set(t){document.documentElement.classList[t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'add':'remove']('dark');}
