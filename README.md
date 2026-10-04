@@ -1,6 +1,6 @@
 # pyssg
 
-Source for [rlrs.github.io](https://rlrs.github.io), built with `pyssg.py`, a small single-file static site generator.
+Source for [rlrs.dk](https://rlrs.dk), built with `pyssg.py`, a small single-file static site generator.
 
 ```bash
 uv sync
