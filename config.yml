@@ -11,10 +11,3 @@ intro: |
   I train and evaluate language models, mostly for Danish, as part of
   [Danish Foundation Models](https://www.foundationmodels.dk). This is where I write things up
   when they seem worth sharing.
-projects:
-  - title: Danish Foundation Models
-    url: https://www.foundationmodels.dk
-    description: Open language models, datasets and benchmarks for Danish.
-  - title: Danish compression leaderboard
-    url: /blog/leaderboard/results.html
-    description: Base models ranked by how well they compress fresh Danish, English and Python text.
