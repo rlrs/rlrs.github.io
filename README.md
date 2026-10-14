@@ -35,12 +35,14 @@ and publishes `dist/` to GitHub Pages. Files left over from deleted pages are re
   ---
   ```
 
-- **Math:** `$inline$` and `$$display$$` (KaTeX). Prices like `$5 and $10` stay plain text; write `\$` to force a literal dollar sign.
+- **Math:** `$inline$` and `$$display$$` (converted to MathML at build time, so no math JavaScript). Prices like `$5 and $10` stay plain text; write `\$` to force a literal dollar sign.
 - **Code:** fenced blocks with a language are highlighted by Pygments.
 - `static/` is copied to `dist/static/` as-is.
-- **Site settings** live in `config.yml`: `site_name`, `author`, `base_url`, `description`, `github`, and
-  `intro` (Markdown shown at the top of the home page).
-- **Theme:** Jinja2 templates in `theme/`; styles in `theme/site.css` (Tailwind v4, compiled by the pinned
-  standalone CLI, downloaded on first build). Colours are CSS variables at the top of `site.css`, swapped for
-  dark mode. Fonts are self-hosted Inter (text) and Source Serif 4 (headings) in `static/fonts/`, both SIL OFL.
-  Each page also gets a generated 1200×630 link-preview card under `/og/`, drawn with the fonts in `theme/fonts/`.
+- **Site settings** live in `config.yml`: `site_name`, `author`, `base_url`, `description`, the header's
+  `tagline` and `clock` (city + time zone), an optional footer `now` line, and the home page's `upcoming`
+  (unpublished titles shown, unlinked, at the top of Writing), `projects` and `elsewhere` lists. `tagline` and
+  `now` are one-line Markdown.
+- **Theme:** Jinja2 templates in `theme/`; plain CSS in `theme/site.css`, written to `dist/site.css` together
+  with the Pygments colours. Colours are CSS variables at the top of `site.css`, swapped for dark mode. The font
+  is self-hosted Familjen Grotesk in `static/fonts/`, SIL OFL. The built site loads nothing from other hosts.
+  Each page also gets a generated 1200×630 link-preview card under `/og/`, drawn with the font in `theme/fonts/`.

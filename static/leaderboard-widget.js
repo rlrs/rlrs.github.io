@@ -1,263 +1,182 @@
-// LeaderboardWidget – sortable, filterable results table; colours come from the site's CSS tokens
+// LeaderboardWidget – sortable, filterable results table. No dependencies; styles live in theme/site.css.
 class LeaderboardWidget extends HTMLElement {
-    async connectedCallback () {
-      /* ----------------- HTML skeleton ----------------- */
-      this.innerHTML = `
-      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.8.1/dist/nouislider.min.css" />
-      <style>
-        /* nouislider, restyled with the site's colour tokens (theme/site.css) */
-        leaderboard-widget .noUi-target{background:var(--line);border:none;border-radius:9999px;height:4px;box-shadow:none}
-        leaderboard-widget .noUi-connect{background:var(--accent)}
-        leaderboard-widget .noUi-horizontal .noUi-handle{height:16px;width:16px;top:-6px;right:-8px;border-radius:9999px;border:2px solid var(--accent);background:var(--surface);box-shadow:none;cursor:grab}
-        leaderboard-widget .noUi-handle:after,leaderboard-widget .noUi-handle:before{display:none}
-        leaderboard-widget .noUi-handle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-        leaderboard-widget .noUi-horizontal .noUi-tooltip{bottom:auto;top:-30px;border:none;border-radius:6px;background:var(--ink);color:var(--paper);font-size:.75rem;font-weight:500;padding:1px 6px;font-variant-numeric:tabular-nums}
-        leaderboard-widget input[type=range]{accent-color:var(--accent)}
-      </style>
-      <div class="text-ink-soft">
-        <!-- Controls -->
-        <div class="mb-5 flex flex-wrap items-end gap-x-10 gap-y-6 rounded-xl border border-line bg-surface px-5 pt-4 pb-5">
-          <div class="grow basis-72">
-            <label class="block text-sm font-medium text-ink">Model size <span class="font-normal text-muted">(billion parameters)</span></label>
-            <div class="px-2 pt-10"><div id="parameter-range"></div></div>
+  async connectedCallback() {
+    /* ----------------- HTML skeleton ----------------- */
+    this.innerHTML = `
+      <div class="lb">
+        <div class="lb-controls">
+          <div class="lb-control">
+            <label id="lb-size-label">Model size <span>(billion parameters): <output></output></span></label>
+            <div class="lb-range" role="group" aria-labelledby="lb-size-label">
+              <div class="track"></div><div class="fill"></div>
+              <input type="range" min="0" max="1000" value="0" aria-label="Smallest model size">
+              <input type="range" min="0" max="1000" value="1000" aria-label="Largest model size">
+            </div>
           </div>
-          <div class="basis-52 grow sm:grow-0">
-            <label for="color-gradient-midpoint" class="block text-sm font-medium text-ink">Colour midpoint</label>
-            <input type="range" id="color-gradient-midpoint" min="0.1" max="0.9" step="0.05" value="0.2" class="mt-4 w-full cursor-pointer" />
+          <div class="lb-control narrow">
+            <label for="lb-midpoint">Colour midpoint</label>
+            <input type="range" id="lb-midpoint" min="0.1" max="0.9" step="0.05" value="0.2">
           </div>
         </div>
-
-        <!-- Table -->
-        <div class="overflow-auto max-h-[80vh] rounded-xl border border-line bg-surface">
-          <table id="leaderboard-table" class="min-w-full text-sm border-separate border-spacing-0">
-            <thead><tr></tr></thead>
-            <tbody></tbody>
-          </table>
+        <div class="lb-scroll">
+          <table class="lb-table"><thead><tr></tr></thead><tbody></tbody></table>
         </div>
-        <p class="mt-3 text-xs text-muted">Click a column header to sort. Darker cells compress better within that column; compare models within a column, not across columns.</p>
+        <p class="lb-note">Click a column header to sort. Darker cells compress better within that column; compare models within a column, not across columns.</p>
+        <div class="lb-empty" hidden>No models in this size range.</div>
+      </div>`;
 
-        <!-- Empty state -->
-        <div id="no-results" class="hidden rounded-xl border border-dashed border-line p-8 text-center text-muted">
-          No models in this size range.
-        </div>
-      </div>
-      `;
+    /* ----------------- Load data ----------------- */
+    let data;
+    try {
+      const res = await fetch("/static/data/leaderboard.json");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+    } catch (err) {
+      console.error("Leaderboard load error", err);
+      this.innerHTML = `<div class="lb-empty">Couldn't load the leaderboard data. Please try again later.</div>`;
+      return;
+    }
 
-      /* ----------------- Load libraries ----------------- */
-      await import("https://cdn.jsdelivr.net/npm/d3@7");
-      await import("https://cdn.jsdelivr.net/npm/nouislider@15.8.1/dist/nouislider.min.js");
-  
-      /* ----------------- Component state ----------------- */
-      let currentSort = { column: "average", order: "asc" };
-  
-      /* ----------------- DOM refs ----------------- */
-      const table               = this.querySelector("#leaderboard-table");
-      const headerRow           = table.querySelector("thead tr");
-      const tbody               = table.querySelector("tbody");
-      const noResultsMessage    = this.querySelector("#no-results");
-      const colorMidpointSlider = this.querySelector("#color-gradient-midpoint");
-      const parameterRange      = this.querySelector("#parameter-range");
-  
-      /* ----------------- Helpers ----------------- */
-      // sequential single-hue scale (colour-blind safe), defined in theme/site.css
-      const token  = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      const GOOD   = () => token("--lb-good");
-      const MID    = () => token("--lb-mid");
-      const BAD    = () => token("--surface");
+    /* ----------------- DOM refs and state ----------------- */
+    const headerRow = this.querySelector("thead tr");
+    const tbody     = this.querySelector("tbody");
+    const scroller  = this.querySelector(".lb-scroll");
+    const empty     = this.querySelector(".lb-empty");
+    const midpoint  = this.querySelector("#lb-midpoint");
+    const [lo, hi]  = this.querySelectorAll(".lb-range input");
+    const fill      = this.querySelector(".lb-range .fill");
+    const sizeOut   = this.querySelector("output");
+    let sort = { key: "average", dir: 1 };
 
-      /* ----------------- Load data ----------------- */
-      d3.json("/static/data/leaderboard.json").then((data) => {
-        const datasets = new Set();
-        const paramSizes = [];
-        data.forEach((row) => {
-          paramSizes.push(+row.parameters);
-          Object.keys(row).forEach((k) => {
-            if (!["model", "parameters", "average"].includes(k)) datasets.add(k);
-          });
+    const datasets = [...new Set(data.flatMap((r) => Object.keys(r)))]
+      .filter((k) => !["model", "parameters", "average"].includes(k))
+      .sort();
+
+    /* ----------------- Size slider ----------------- */
+    // slider positions 0–1000 map piecewise-linearly onto parameter counts;
+    // most models are small, so the first 30B get more than half of the track
+    const sizes = data.map((r) => +r.parameters);
+    const pMin = Math.floor(Math.min(...sizes));
+    const pMax = Math.ceil(Math.max(...sizes));
+    const knots = pMax > 100 ? [[0, pMin], [550, 30], [800, 100], [1000, pMax]] : [[0, pMin], [1000, pMax]];
+    const sizeAt = (pos) => {
+      for (let i = 1; i < knots.length; i++) {
+        const [x0, y0] = knots[i - 1], [x1, y1] = knots[i];
+        if (pos <= x1) return Math.round((y0 + (y1 - y0) * (pos - x0) / (x1 - x0)) * 10) / 10;
+      }
+      return pMax;
+    };
+    const onSize = (moved) => {
+      // handles can't cross: the one being dragged stops at the other
+      if (+lo.value > +hi.value) moved.value = moved === lo ? hi.value : lo.value;
+      // when both sit at the right end, keep the lower handle on top so it can be dragged back
+      lo.style.zIndex = +lo.value > 990 ? 2 : "";
+      const a = lo.value / 1000, b = hi.value / 1000;
+      fill.style.left = `calc(8px + (100% - 16px) * ${a})`;
+      fill.style.width = `calc((100% - 16px) * ${b - a})`;
+      sizeOut.textContent = `${sizeAt(+lo.value).toFixed(1)}–${sizeAt(+hi.value).toFixed(1)}`;
+      render();
+    };
+
+    /* ----------------- Colours ----------------- */
+    // sequential single-hue scale (colour-blind safe) from the CSS tokens in theme/site.css
+    const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const rgb = (hex) => {
+      const h = hex.replace("#", "");
+      const n = parseInt(h.length === 3 ? h.replace(/./g, "$&$&") : h, 16);
+      return [n >> 16, (n >> 8) & 255, n & 255];
+    };
+    const mix = (c0, c1, t) => `rgb(${c0.map((v, i) => Math.round(v + (c1[i] - v) * t)).join(",")})`;
+    // good (lowest) → mid (at the midpoint) → surface (highest)
+    const scale = (vals) => {
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const mid = min + (max - min) * +midpoint.value;
+      const [good, middle, bad] = ["--lb-good", "--lb-mid", "--surface"].map((t) => rgb(token(t)));
+      return (v) => {
+        if (max === min) return mix(good, good, 0);
+        return v <= mid ? mix(good, middle, (v - min) / (mid - min || 1)) : mix(middle, bad, (v - mid) / (max - mid || 1));
+      };
+    };
+
+    /* ----------------- Table ----------------- */
+    const label = (name) => name.replace(/\.json$/, "").replace(/[-_]/g, " ").replace(/(^|\s)\w/g, (m) => m.toUpperCase());
+
+    const th = (text, key, cls = "") => {
+      const el = document.createElement("th");
+      el.textContent = text;
+      if (cls) el.className = cls;
+      if (key) {
+        el.dataset.key = key;
+        el.addEventListener("click", () => {
+          sort = sort.key === key ? { key, dir: -sort.dir } : { key, dir: 1 };
+          render();
         });
-        const sortedDatasets = Array.from(datasets).sort();
-  
-        /* Range slider */
-        const pMin = Math.floor(Math.min(...paramSizes));
-        const pMax = Math.ceil(Math.max(...paramSizes));
-  
-        noUiSlider.create(parameterRange, {
-          start: [pMin, pMax],
-          connect: true,
-          // most models are small: give the first 30B more than half of the track
-          range: pMax > 100 ? { min: pMin, "55%": 30, "80%": 100, max: pMax } : { min: pMin, max: pMax },
-          step: 0.1,
-          margin: 0.1,
-          tooltips: [true, true],
-          format: {
-            to: (value) => (+value).toFixed(1),
-            from: (value) => (+value),
-          },
+      }
+      headerRow.appendChild(el);
+    };
+    th("Model", null, "model");
+    th("Params (B)", "parameters");
+    datasets.forEach((ds) => th(label(ds), ds));
+    th("Average", "average", "avg");
+
+    const td = (text, cls = "", bg = "") => {
+      const el = document.createElement("td");
+      el.textContent = text;
+      if (cls) el.className = cls;
+      if (bg) el.style.background = bg;
+      return el;
+    };
+
+    function render() {
+      const sLo = sizeAt(+lo.value), sHi = sizeAt(+hi.value);
+      const rows = data
+        .filter((r) => +r.parameters >= sLo && +r.parameters <= sHi)
+        .map((r) => {
+          const vals = datasets.filter((ds) => r[ds] !== undefined).map((ds) => r[ds]);
+          return { ...r, avg: vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : r.average ?? 0 };
         });
-  
-        /* Build header */
-        buildHeader();
-  
-        /* Listeners */
-        parameterRange.noUiSlider.on("update", updateTable);
-        colorMidpointSlider.addEventListener("input", updateTable);
-        const darkObserver = new MutationObserver(updateTable);
-        darkObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-  
-        /* Initial render */
-        updateTable();
-  
-        /* ===== functions ===== */
-        function buildHeader() {
-          headerRow.innerHTML = "";
-          const makeTH = (label, key, isDataset = false) => {
-            const th = document.createElement("th");
-            th.textContent = label;
-            th.className = "sticky top-0 z-20 bg-surface border-b border-line px-3 pt-3 pb-2 align-bottom text-xs font-medium text-muted text-right whitespace-normal min-w-[5.5rem] select-none";
-            if (key) {
-              if (isDataset) th.dataset.dataset = key; else th.dataset.column = key;
-              th.classList.add("cursor-pointer", "hover:text-ink", "transition-colors");
-              th.addEventListener("click", () => {
-                if (currentSort.column === key) {
-                  currentSort.order = currentSort.order === "asc" ? "desc" : "asc";
-                } else {
-                  currentSort = { column: key, order: "asc" };
-                }
-                updateSortIndicators();
-                updateTable();
-              });
-            }
-            headerRow.appendChild(th);
-          };
-          makeTH("Model");
-          // model column stays put when the table scrolls sideways
-          headerRow.lastChild.classList.add("left-0", "z-30", "text-left", "min-w-0");
-          headerRow.lastChild.classList.remove("text-right");
-          makeTH("Params (B)", "parameters");
-          sortedDatasets.forEach((ds) => makeTH(formatDatasetName(ds), ds, true));
-          makeTH("Average", "average");
-          headerRow.lastChild.classList.add("border-l");
-          updateSortIndicators();
-        }
-  
-        function updateSortIndicators() {
-          headerRow.querySelectorAll("th[data-column], th[data-dataset]").forEach((th) => {
-            th.querySelector(".sort-icon")?.remove();
-          });
-          const key = currentSort.column;
-          const th = headerRow.querySelector(`[data-column='${key}'], [data-dataset='${key}']`);
-          if (!th) return;
-          const icon = document.createElement("span");
-          icon.className = "sort-icon ml-1 text-accent";
-          icon.textContent = currentSort.order === "asc" ? "↑" : "↓";
-          th.classList.add("text-ink");
-          headerRow.querySelectorAll("th").forEach((o) => o !== th && o.classList.remove("text-ink"));
-          th.appendChild(icon);
-        }
-  
-        function updateTable() {
-          tbody.innerHTML = "";
-          const [pLo, pHi] = parameterRange.noUiSlider.get().map(Number);
-          const midpoint = +colorMidpointSlider.value;
-  
-          let rows = data
-            .filter((r) => +r.parameters >= pLo && +r.parameters <= pHi)
-            .map((r) => {
-              const vals = sortedDatasets.filter((ds) => r[ds] !== undefined).map((ds) => r[ds]);
-              return { ...r, visibleAverage: vals.length ? d3.mean(vals) : r.average ?? 0 };
-            });
-  
-          const dir = currentSort.order === "asc" ? 1 : -1;
-          rows.sort((a, b) => {
-            const col = currentSort.column;
-            if (col === "parameters") return dir * (+a.parameters - +b.parameters);
-            if (col === "average") return dir * (a.visibleAverage - b.visibleAverage);
-            const av = a[col] ?? Infinity;
-            const bv = b[col] ?? Infinity;
-            return dir * (av - bv);
-          });
-  
-          const dsScales = {};
-          sortedDatasets.forEach((ds) => {
-            const vals = rows.flatMap((r) => (r[ds] !== undefined ? [r[ds]] : []));
-            if (!vals.length) return;
-            const min = d3.min(vals);
-            const max = d3.max(vals);
-            const mid = min + (max - min) * midpoint;
-            dsScales[ds] = d3.scaleLinear().domain([min, mid, max]).range([GOOD(), MID(), BAD()]);
-          });
-  
-          const avgVals = rows.map((r) => r.visibleAverage);
-          const avgScale = d3.scaleLinear()
-            .domain([
-              d3.min(avgVals) ?? 0,
-              (d3.min(avgVals) ?? 0) + (d3.max(avgVals) - (d3.min(avgVals) ?? 0)) * midpoint,
-              d3.max(avgVals) ?? 1,
-            ])
-            .range([GOOD(), MID(), BAD()]);
-  
-          if (!rows.length) {
-            noResultsMessage.classList.remove("hidden");
-            table.classList.add("hidden");
-            return;
-          }
-          noResultsMessage.classList.add("hidden");
-          table.classList.remove("hidden");
-  
-          rows.forEach((row, idx) => {
-            const tr = document.createElement("tr");
-            tr.className = "group";
-  
-            const cell = (txt) => {
-              const td = document.createElement("td");
-              td.textContent = txt;
-              td.className = "px-3 py-2 border-b border-line text-right tabular-nums";
-              return td;
-            };
-  
-            // model
-            const modelTd = cell(row.model);
-            modelTd.classList.remove("text-right", "tabular-nums");
-            // narrow screens: wrap long names so the numbers stay in view
-            modelTd.classList.add("text-left", "font-medium", "text-ink", "min-w-[8.5rem]", "max-w-[8.5rem]", "sm:max-w-none", "wrap-anywhere", "sm:wrap-normal", "sm:whitespace-nowrap", "sticky", "left-0", "z-10", "bg-surface");
-            tr.appendChild(modelTd);
-  
-            // params
-            const paramTd = cell((+row.parameters).toFixed(1));
-            paramTd.classList.add("text-muted");
-            tr.appendChild(paramTd);
-  
-            // datasets
-            sortedDatasets.forEach((ds) => {
-              const td = cell("–");
-              if (row[ds] !== undefined) {
-                td.textContent = row[ds].toFixed(2);
-                td.style.background = dsScales[ds] ? dsScales[ds](row[ds]) : "";
-              } else {
-                td.classList.add("text-muted");
-              }
-              tr.appendChild(td);
-            });
-  
-            // average
-            const avgTd = cell(row.visibleAverage.toFixed(2));
-            avgTd.style.background = avgScale(row.visibleAverage);
-            avgTd.classList.add("font-semibold", "text-ink", "border-l");
-            tr.appendChild(avgTd);
-  
-            tbody.appendChild(tr);
-          });
-        }
-  
-        function formatDatasetName(name) {
-          return name.replace(/\.json$/, "").replace(/[-_]/g, " ").replace(/^(\w)|\s(\w)/g, (m) => m.toUpperCase());
-        }
-      }).catch((err) => {
-        console.error("Leaderboard load error", err);
-        this.innerHTML = `<div class="rounded-xl border border-line p-6 text-muted">Couldn't load the leaderboard data. Please try again later.</div>`;
+
+      rows.sort((a, b) => {
+        if (sort.key === "parameters") return sort.dir * (a.parameters - b.parameters);
+        if (sort.key === "average") return sort.dir * (a.avg - b.avg);
+        return sort.dir * ((a[sort.key] ?? Infinity) - (b[sort.key] ?? Infinity));
+      });
+
+      headerRow.querySelectorAll("th").forEach((el) => {
+        el.querySelector(".arrow")?.remove();
+        el.classList.toggle("sorted", el.dataset.key === sort.key);
+        if (el.dataset.key === sort.key) el.insertAdjacentHTML("beforeend", `<span class="arrow">${sort.dir > 0 ? "↑" : "↓"}</span>`);
+      });
+
+      scroller.hidden = !rows.length;
+      empty.hidden = !!rows.length;
+      tbody.replaceChildren();
+      if (!rows.length) return;
+
+      const scales = {};
+      datasets.forEach((ds) => {
+        const vals = rows.flatMap((r) => (r[ds] !== undefined ? [r[ds]] : []));
+        if (vals.length) scales[ds] = scale(vals);
+      });
+      const avgScale = scale(rows.map((r) => r.avg));
+
+      rows.forEach((r) => {
+        const tr = document.createElement("tr");
+        tr.append(td(r.model, "model"), td((+r.parameters).toFixed(1), "dim"));
+        datasets.forEach((ds) => tr.append(r[ds] === undefined ? td("–", "dim") : td(r[ds].toFixed(2), "", scales[ds](r[ds]))));
+        tr.append(td(r.avg.toFixed(2), "avg", avgScale(r.avg)));
+        tbody.appendChild(tr);
       });
     }
+
+    /* ----------------- Wire up ----------------- */
+    lo.addEventListener("input", () => onSize(lo));
+    hi.addEventListener("input", () => onSize(hi));
+    midpoint.addEventListener("input", render);
+    // recolour when the theme toggles
+    new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    onSize(hi);
   }
-  
-  customElements.define("leaderboard-widget", LeaderboardWidget);
-  
+}
+
+customElements.define("leaderboard-widget", LeaderboardWidget);

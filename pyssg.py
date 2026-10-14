@@ -5,15 +5,15 @@ Main features
 -------------
 * **Blog posts & standalone pages** handled with Markdown + YAML front‑matter.
 * **Theme‑first design** – layouts live in a `theme/` folder; swap or tweak at will.
-* **KaTeX math** – `$…$` / `$$…$$` parsed at build time, typeset in the browser.
+* **Math** – `$…$` / `$$…$$` turned into MathML at build time; browsers render it natively.
 * **Per‑page BibTeX citations** using the simple `[@key]` syntax.
 * **Syntax highlighting** via Pygments (CSS emitted once per build).
-* **Tailwind CSS** compiled from `theme/site.css` by the standalone CLI (no Node needed).
+* **Plain CSS** – `theme/site.css` plus the Pygments colours, written to one `site.css`.
 * **Social cards** – a 1200×630 Open Graph image per page, drawn with Pillow.
 * **RSS feed, tag listings, static asset copy, dev server** – the niceties you expect.
 
-Minimal, well‑known deps only: `markdown‑it‑py`, `mdit-py-plugins`, `PyYAML`, `Pygments`, `Jinja2`,
-`bibtexparser`, `watchdog`.
+Minimal, well‑known deps only: `markdown‑it‑py`, `mdit-py-plugins`, `latex2mathml`, `PyYAML`,
+`Pygments`, `Jinja2`, `bibtexparser`, `Pillow`. The built site loads nothing from other hosts.
 
 Run `uv sync` (see pyproject.toml)
 
@@ -53,17 +53,16 @@ from typing import Any, Dict, List
 
 import bibtexparser  # type: ignore
 import jinja2  # type: ignore
+from latex2mathml.converter import convert as latex_to_mathml  # type: ignore
+import markupsafe  # type: ignore
 import yaml  # type: ignore
 from markdown_it import MarkdownIt  # type: ignore
 from mdit_py_plugins.anchors import anchors_plugin  # type: ignore
 from mdit_py_plugins.dollarmath import dollarmath_plugin  # type: ignore
-import pytailwindcss  # type: ignore
 from PIL import Image, ImageDraw, ImageFont  # type: ignore
 from pygments import highlight  # type: ignore
 from pygments.formatters import HtmlFormatter  # type: ignore
 from pygments.lexers import TextLexer, get_lexer_by_name  # type: ignore
-from watchdog.observers import Observer  # type: ignore
-from watchdog.events import FileSystemEventHandler  # type: ignore
 
 # ----------------------------------------------------------------------------
 # Markdown helpers
@@ -82,14 +81,23 @@ def _highlight(code: str, lang: str, *_):
 
 _MD = MarkdownIt("commonmark", {"html": True}).enable("table")
 _MD.options["highlight"] = _highlight
-# Emits <span class="math inline"> / <div class="math block"> with escaped TeX, which
-# theme/base.html typesets with KaTeX. allow_space/allow_digits off so prose like
-# "$5 and $10" stays plain text.
+# $…$ / $$…$$ → MathML. allow_space/allow_digits off so prose like "$5 and $10" stays plain text.
 dollarmath_plugin(_MD, allow_space=False, allow_digits=False)
+
+def _math_rule(display: str):
+    def render(self, tokens, idx, options, env):
+        tex = tokens[idx].content.strip()
+        try:
+            return latex_to_mathml(tex, display=display)
+        except Exception:
+            logging.warning("Could not convert math to MathML: %s", tex)
+            return f"<code>{html.escape(tex)}</code>"
+    return render
+
+for _rule, _display in [("math_inline", "inline"), ("math_inline_double", "block"), ("math_block", "block")]:
+    _MD.add_render_rule(_rule, _math_rule(_display))
 # ids on h2/h3 at build time, so #section links work and the post TOC can use them
 anchors_plugin(_MD, min_level=2, max_level=3)
-
-_TAILWIND_VERSION = "v4.3.3"  # pinned so local and CI builds match
 
 _CITE_PAT = re.compile(r"\[@([^\]]+)\]")
 
@@ -140,7 +148,7 @@ class Page:
             raise ValueError(f"{src}: date {raw!r} is not YYYY-MM-DD") from None
 
     def _make_excerpt(self, words: int = 35):
-        prose = re.sub(r'<pre.*?</pre>|<(span|div) class="math.*?</\1>', " ", self.html, flags=re.S)
+        prose = re.sub(r'<pre.*?</pre>|<math.*?</math>', " ", self.html, flags=re.S)
         plain = html.unescape(re.sub(r"<[^>]+>", " ", prose)).split()
         return " ".join(plain[:words]) + " …" if plain else ""
 
@@ -158,6 +166,8 @@ class Site:
         self.env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(root / "theme")), autoescape=True)
         # expose dt for templates
         self.env.globals["dt"] = dt
+        # one-line Markdown from config.yml (tagline, now)
+        self.env.filters["md_inline"] = lambda text: markupsafe.Markup(_MD.renderInline(text or ""))
 
     # ---------------------------------------------------------------- config
     def _load_config(self):
@@ -170,7 +180,6 @@ class Site:
         self.config = self._load_config()  # re-read so `serve` picks up config.yml edits
         self._discover()
         self._copy_static()
-        self._emit_pygments_css()
         self._build_css()
         self._render_og_images()
         self._render_pages()
@@ -325,21 +334,26 @@ class Site:
         self._draw_og_card(site_name, "", self.config.get("description") or domain, self.dist / "og" / "index.png")
 
     def _draw_og_card(self, title: str, kicker: str, footer: str, dest: pathlib.Path):
-        fonts = self.root / "theme" / "fonts"
-        serif, regular = fonts / "SourceSerif4-Semibold.ttf", fonts / "Inter-Regular.ttf"
+        font_path = str(self.root / "theme" / "fonts" / "FamiljenGrotesk-var.ttf")
+
+        def font_at(size: int, weight: int):
+            f = ImageFont.truetype(font_path, size)
+            f.set_variation_by_axes([weight])
+            return f
+
         w, h = self._OG_SIZE
         pad = 80
         # colours mirror the light theme tokens in theme/site.css
-        ink, muted, accent = "#1d1c1a", "#75716a", "#0f766e"
-        img = Image.new("RGB", (w, h), "#fdfcfa")      # --paper
+        ink, muted, accent = "#191919", "#74716a", "#2747d6"
+        img = Image.new("RGB", (w, h), "#f6f5f1")      # --paper
         d = ImageDraw.Draw(img)
         d.rectangle([0, 0, w, 10], fill=accent)
-        small = ImageFont.truetype(str(regular), 30)
+        small = font_at(30, 400)
         if kicker:
             d.text((pad, pad), kicker, font=small, fill=muted)
         # largest title size (76 → 48px) that wraps into at most 4 lines
         for size in range(76, 47, -4):
-            font = ImageFont.truetype(str(serif), size)
+            font = font_at(size, 600)
             lines = self._wrap(title, font, w - 2 * pad)
             if len(lines) <= 4:
                 break
@@ -378,28 +392,28 @@ class Site:
         posts = sorted([p for p in self.pages if p.is_post], key=lambda x: x.date, reverse=True)
         tmpl = self.env.get_template("index.html")
         ctx = {"site": self.config, "posts": posts, "pages": self.pages, "today": dt.date.today()}
-        # home page: intro (config `intro`, Markdown) + posts; /blog/: just the archive
-        intro = _MD.render(self.config.get("intro", ""))
-        (self.dist / "index.html").write_text(tmpl.render(home=True, intro=intro, **ctx), "utf8")
-        blog_dir = self.dist / "blog"
-        blog_dir.mkdir(exist_ok=True)
-        (blog_dir / "index.html").write_text(tmpl.render(home=False, **ctx), "utf8")
+        # the home page lists every post; the old /blog/ archive forwards there
+        (self.dist / "index.html").write_text(tmpl.render(**ctx), "utf8")
+        self._write_redirect("/blog/index.html", "/")
 
     def _render_redirects(self):
         """`redirect_from: [/old.html]` in front matter leaves a stub that forwards to the new URL."""
         for pg in self.pages:
             for old in pg.meta.get("redirect_from", []):
-                target = html.escape(pg.url)
-                stub = (
-                    "<!DOCTYPE html><meta charset='utf-8'>"
-                    f"<title>Moved</title><link rel='canonical' href='{html.escape(self.config.get('base_url', ''))}{target}'>"
-                    f"<meta http-equiv='refresh' content='0; url={target}'>"
-                    f"<script>location.replace('{target}' + location.hash)</script>"
-                    f"<p>This page has moved to <a href='{target}'>{target}</a>.</p>"
-                )
-                dest = self.dist / old.lstrip("/")
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_text(stub, "utf8")
+                self._write_redirect(old, pg.url)
+
+    def _write_redirect(self, old: str, new: str):
+        target = html.escape(new)
+        stub = (
+            "<!DOCTYPE html><meta charset='utf-8'>"
+            f"<title>Moved</title><link rel='canonical' href='{html.escape(self.config.get('base_url', ''))}{target}'>"
+            f"<meta http-equiv='refresh' content='0; url={target}'>"
+            f"<script>location.replace('{target}' + location.hash)</script>"
+            f"<p>This page has moved to <a href='{target}'>{target}</a>.</p>"
+        )
+        dest = self.dist / old.lstrip("/")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(stub, "utf8")
 
     def _render_tags(self):
         by_tag: Dict[str, List[Page]] = {}
@@ -459,28 +473,25 @@ class Site:
             # plain copy (not copy2) so files get a fresh mtime – see _prune_dist
             shutil.copytree(static, self.dist / "static", dirs_exist_ok=True, copy_function=shutil.copy)
 
-    def _emit_pygments_css(self):
-        css = "\n".join(HtmlFormatter(style=style).get_style_defs(f"{prefix}pre.highlight")
-                        for prefix, style in _PYGMENTS_STYLES.items())
-        (self.dist / "pygments.css").write_text(css, "utf8")
-
     def _build_css(self):
-        src = self.root / "theme" / "site.css"
-        if not src.exists():
-            return
-        out = self.dist / "site.css"
-        # Downloads the pinned standalone Tailwind binary on first use.
-        log = pytailwindcss.run(
-            ["-i", str(src), "-o", str(out), "--minify"],
-            cwd=self.root, auto_install=True, version=_TAILWIND_VERSION,
-        )
-        if not out.exists():
-            raise RuntimeError(f"Tailwind produced no {out}:\n{log}")
-        out.touch()  # Tailwind skips unchanged output; keep it from looking stale to _prune_dist
+        """theme/site.css + the Pygments token colours (light, and dark under .dark) → dist/site.css."""
+        parts = [(self.root / "theme" / "site.css").read_text("utf8"), "/* ---- code highlighting (Pygments) ---- */"]
+        for prefix, style in _PYGMENTS_STYLES.items():
+            sel = f"{prefix}pre.highlight"
+            # keep only the token rules; Pygments also emits global pre/line-number rules we don't use
+            defs = HtmlFormatter(style=style).get_style_defs(sel).splitlines()
+            parts += [line for line in defs if line.startswith(sel + " .")]
+        (self.dist / "site.css").write_text("\n".join(parts) + "\n", "utf8")
 
 # ----------------------------------------------------------------------------
-# Live‑reload dev server using watchdog
+# Dev server: serves dist/ and rebuilds when a source file changes
 # ----------------------------------------------------------------------------
+
+def _source_mtimes(root: pathlib.Path) -> Dict[pathlib.Path, float]:
+    files = [root / "config.yml", pathlib.Path(__file__).resolve()]
+    for d in ("content", "theme", "static"):
+        files += [f for f in (root / d).rglob("*") if f.is_file() and not f.name.startswith(".")]
+    return {f: f.stat().st_mtime for f in files if f.exists()}
 
 def _serve(site: Site, port: int):
     def run_server():
@@ -491,41 +502,29 @@ def _serve(site: Site, port: int):
             httpd.serve_forever()
     threading.Thread(target=run_server, daemon=True).start()
 
-    class RebuildHandler(FileSystemEventHandler):
-        def __init__(self):
-            super().__init__()
-            self._last = 0.0  # debounce
-        def on_any_event(self, event):
-            if event.is_directory:
-                return
-            # ignore changes inside the output folder
-            if pathlib.Path(event.src_path).is_relative_to(site.dist):
-                return
-            # ignore dotfiles
-            if any(part.startswith(".") for part in pathlib.Path(event.src_path).parts):
-                return
-            # debounce rapid duplicate events from editors (200 ms)
-            now = time.time()
-            if now - self._last < 0.2:
-                return
-            self._last = now
-            logging.info("[watch] change detected: %s", event.src_path)
-            if pathlib.Path(event.src_path).resolve() == pathlib.Path(__file__).resolve():
+    seen = _source_mtimes(site.root)
+    try:
+        while True:
+            time.sleep(0.5)
+            now = _source_mtimes(site.root)
+            if now == seen:
+                continue
+            changed = sorted(str(f.relative_to(site.root)) if f.is_relative_to(site.root) else str(f)
+                             for f in now.keys() | seen.keys() if now.get(f) != seen.get(f))
+            seen = now
+            logging.info("[watch] changed: %s", ", ".join(changed))
+            if now.get(pathlib.Path(__file__).resolve()) != _start_mtime:
                 # the generator itself changed: restart so the new code is used
                 logging.info("[watch] pyssg.py changed, restarting")
                 os.execv(sys.executable, [sys.executable, str(pathlib.Path(__file__).resolve()), *sys.argv[1:]])
-            site.build()
-    observer = Observer()
-    watch_dirs = [site.root/"content", site.root/"theme", site.root/"static", site.root]
-    for p in watch_dirs:
-        observer.schedule(RebuildHandler(), str(p), recursive=True)
-    observer.start()
-    try:
-        while True:
-            time.sleep(1)
+            try:
+                site.build()
+            except Exception:
+                logging.exception("Build failed")
     except KeyboardInterrupt:
-        observer.stop()
-        observer.join()
+        pass
+
+_start_mtime = pathlib.Path(__file__).resolve().stat().st_mtime
 
 # ----------------------------------------------------------------------------
 # CLI

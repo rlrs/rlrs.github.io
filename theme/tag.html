@@ -1,12 +1,16 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1 class='font-serif text-3xl font-semibold tracking-tight text-ink mt-6 mb-6'>Tagged <span class='text-accent'>#{{ tag }}</span></h1>
-<ul class='divide-y divide-line'>
-  {% for p in tag_pages %}
-  <li class='py-4 flex flex-wrap items-baseline justify-between gap-x-6'>
-    <a class='font-serif text-lg font-semibold text-ink hover:text-accent transition-colors' href='{{ p.url }}'>{{ p.meta.title }}</a>
-    <time datetime='{{ p.date }}' class='text-sm text-muted tabular-nums'>{{ p.date.strftime('%-d %B %Y') }}</time>
-  </li>
-  {% endfor %}
-</ul>
+<div class='archive'>
+  <h1 class='page-title'>Tagged <span class='tag'>#{{ tag }}</span></h1>
+  <ul class='list'>
+    {% for p in tag_pages %}
+    <li>
+      <a href='{{ p.url }}' class='row'>
+        <span class='title'>{{ p.meta.title }}</span>
+        <time datetime='{{ p.date }}'>{{ p.date.strftime('%-d %b %Y') }}</time>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
 {% endblock %}

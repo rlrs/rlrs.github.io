@@ -1,14 +1,35 @@
 {% extends 'base.html' %}
-{% set label = 'text-xs font-medium uppercase tracking-[0.12em] text-muted' %}
 
-{% macro post_list(items) %}
-<ul class='divide-y divide-line'>
+{% macro post_list(items, upcoming=[]) %}
+<ul class='list'>
+  {% for u in upcoming %}
+  <li>
+    <span class='row'>
+      <span class='title'>{{ u.title }}</span>
+      <span class='soon'>Soon</span>
+    </span>
+  </li>
+  {% endfor %}
   {% for p in items %}
   <li>
-    <a href='{{ p.url }}' class='group block py-6'>
-      <time datetime='{{ p.date }}' class='text-sm text-muted tabular-nums'>{{ p.date.strftime('%-d %B %Y') }}</time>
-      <h3 class='mt-1 font-serif text-xl sm:text-[1.4rem] leading-snug font-semibold tracking-tight text-ink group-hover:text-accent transition-colors text-balance'>{{ p.meta.title }}</h3>
-      {% if p.excerpt %}<p class='mt-2 text-[0.95rem] leading-relaxed text-muted text-pretty'>{{ p.excerpt }}</p>{% endif %}
+    <a href='{{ p.url }}' class='row'>
+      <span class='title'>{{ p.meta.title }}</span>
+      <time datetime='{{ p.date }}'>{{ p.date.strftime('%b %Y') }}</time>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+
+{% macro link_list(items) %}
+<ul class='list'>
+  {% for it in items %}
+  {% set external = it.url.startswith('http') and not it.url.startswith(site.base_url) %}
+  {% set sub = it.description or it.note %}
+  <li>
+    <a href='{{ it.url }}'>
+      <span class='title'>{{ it.title }}{% if external %} <span aria-hidden='true'>↗</span>{% endif %}</span>
+      {% if sub %}<span class='sub'>{{ sub }}</span>{% endif %}
     </a>
   </li>
   {% endfor %}
@@ -16,44 +37,24 @@
 {% endmacro %}
 
 {% block content %}
-{% if home %}
-<section class='pt-8 sm:pt-12 pb-14'>
-  {% if site.greeting %}
-  <h1 class='font-serif text-[2.4rem] sm:text-5xl leading-tight font-semibold tracking-tight text-ink'>{{ site.greeting }}<span class='text-accent'>.</span></h1>
-  {% endif %}
-  <div class='mt-5 prose prose-lg max-w-none [&_p]:my-3 text-pretty'>{{ intro | safe }}</div>
-</section>
-
-<section>
-  <h2 class='{{ label }}'>Writing</h2>
-  {{ post_list(posts[:5]) }}
-  {% if posts | length > 5 %}
-  <a href='/blog/' class='mt-2 inline-block text-sm text-muted hover:text-accent transition-colors'>All writing →</a>
-  {% endif %}
-</section>
-
-{% if site.projects %}
-<section class='mt-14'>
-  <h2 class='{{ label }}'>Projects</h2>
-  <ul class='mt-4 grid gap-3'>
-    {% for pr in site.projects %}
-    {% set external = pr.url.startswith('http') %}
-    <li>
-      <a href='{{ pr.url }}' class='group flex items-start gap-4 rounded-xl border border-line bg-surface px-5 py-4 hover:border-accent/50 transition-colors'>
-        <span class='min-w-0 flex-1'>
-          <span class='block font-medium text-ink group-hover:text-accent transition-colors'>{{ pr.title }}</span>
-          <span class='mt-0.5 block text-sm leading-relaxed text-muted'>{{ pr.description }}</span>
-        </span>
-        <span class='mt-0.5 text-muted group-hover:text-accent transition-colors' aria-hidden='true'>{{ '↗' if external else '→' }}</span>
-      </a>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
-{% endif %}
-
-{% else %}
-<h1 class='font-serif text-3xl font-semibold tracking-tight text-ink mt-6 mb-2'>Writing</h1>
-{{ post_list(posts) }}
-{% endif %}
+<div class='index'>
+  <section>
+    <h2 class='label'>Writing</h2>
+    {{ post_list(posts, upcoming=site.upcoming or []) }}
+  </section>
+  <div class='index-side'>
+    {% if site.projects %}
+    <section>
+      <h2 class='label'>Projects</h2>
+      {{ link_list(site.projects) }}
+    </section>
+    {% endif %}
+    {% if site.elsewhere %}
+    <section>
+      <h2 class='label'>Elsewhere</h2>
+      {{ link_list(site.elsewhere) }}
+    </section>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}

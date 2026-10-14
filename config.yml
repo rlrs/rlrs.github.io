@@ -1,13 +1,38 @@
 base_url: https://rlrs.dk
 author: Rasmus Larsen
-site_name: Rasmus' Stuff
-description: Notes on training and evaluating language models, mostly for Danish.
+site_name: Rasmus Larsen
+description: Writing on ML research and engineering, mostly RL and infrastructure.
 language: en
-github: rlrs
 
-# home page
-greeting: Hi, I'm Rasmus
-intro: |
-  I train and evaluate language models, mostly for Danish, as part of
-  [Danish Foundation Models](https://www.foundationmodels.dk). This is where I write things up
-  when they seem worth sharing.
+# header: the line under your name (Markdown) and a clock showing your local time
+tagline: ML research engineer at [Danish Foundation Models](https://www.foundationmodels.dk)
+clock:
+  city: Copenhagen
+  timezone: Europe/Copenhagen
+
+# footer: optional one-liner about what you're up to (Markdown); leave out to hide
+now: training models...
+
+# home page, right column
+projects:
+  - title: maester
+    url: https://github.com/rlrs/maester
+    description: Language model training framework in modern PyTorch
+  - title: verifiers-ucloud
+    url: https://github.com/rlrs/verifiers-ucloud
+    description: UCloud sandbox runtime for RL environments built with verifiers
+
+elsewhere:
+  - title: GitHub
+    url: https://github.com/rlrs
+    note: rlrs
+  - title: X
+    url: https://x.com/synquid
+    note: "@synquid"
+  - title: Hugging Face
+    url: https://huggingface.co/synquid
+    note: synquid
+
+# home page, top of the Writing list: posts that aren't published yet (no page, no RSS)
+upcoming:
+  - title: "Hurry Up And Wait: The Life of an RL Sandbox (Part 1)"

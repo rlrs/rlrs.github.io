@@ -8,4 +8,4 @@ redirect_from: [/leaderboard.html]
 ---
 
 <script type="module" src="/static/leaderboard-widget.js"></script>
-<leaderboard-widget class="not-prose block"></leaderboard-widget>
+<leaderboard-widget></leaderboard-widget>
