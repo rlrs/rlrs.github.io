@@ -6,7 +6,9 @@ Main features
 * **Blog posts & standalone pages** handled with Markdown + YAML front‑matter.
 * **Theme‑first design** – layouts live in a `theme/` folder; swap or tweak at will.
 * **Math** – `$…$` / `$$…$$` turned into MathML at build time; browsers render it natively.
-* **Per‑page BibTeX citations** using the simple `[@key]` syntax.
+* **Per‑page BibTeX citations** using the simple `[@key]` syntax, and `[^note]` footnotes.
+* **Post series** (`series:` front matter), a "Cite this post" BibTeX entry, a Markdown copy of each
+  post and an `llms.txt` index.
 * **Syntax highlighting** via Pygments (CSS emitted once per build).
 * **Plain CSS** – `theme/site.css` plus the Pygments colours, written to one `site.css`.
 * **Social cards** – a 1200×630 Open Graph image per page, drawn with Pillow.
@@ -59,6 +61,7 @@ import yaml  # type: ignore
 from markdown_it import MarkdownIt  # type: ignore
 from mdit_py_plugins.anchors import anchors_plugin  # type: ignore
 from mdit_py_plugins.dollarmath import dollarmath_plugin  # type: ignore
+from mdit_py_plugins.footnote import footnote_plugin  # type: ignore
 from PIL import Image, ImageDraw, ImageFont  # type: ignore
 from pygments import highlight  # type: ignore
 from pygments.formatters import HtmlFormatter  # type: ignore
@@ -98,6 +101,21 @@ for _rule, _display in [("math_inline", "inline"), ("math_inline_double", "block
     _MD.add_render_rule(_rule, _math_rule(_display))
 # ids on h2/h3 at build time, so #section links work and the post TOC can use them
 anchors_plugin(_MD, min_level=2, max_level=3)
+footnote_plugin(_MD)
+
+_FOOTNOTE_ITEM = re.compile(r'<li id="fn(\d+)" class="footnote-item">(.*?)</li>', re.S)
+_FOOTNOTE_REF = re.compile(r'<sup class="footnote-ref"><a href="#fn(\d+)" id="(fnref[^"]*)">\[[^\]]+\]</a></sup>')
+_FOOTNOTE_BACKREF = re.compile(r'\s*<a href="#fnref[^"]*" class="footnote-backref">.*?</a>')
+
+def _footnote_previews(html_text: str) -> str:
+    """Footnote markers become small numbers that preview the note on hover, like citations do."""
+    notes = {}
+    for num, body in _FOOTNOTE_ITEM.findall(html_text):
+        plain = html.unescape(re.sub(r"<[^>]+>", "", _FOOTNOTE_BACKREF.sub("", body)))
+        notes[num] = html.escape(" ".join(plain.split()), quote=True)
+    return _FOOTNOTE_REF.sub(
+        lambda m: f'<a class="cite fn" data-ref="{notes.get(m.group(1), "")}" href="#fn{m.group(1)}" id="{m.group(2)}">{m.group(1)}</a>',
+        html_text)
 
 _CITE_PAT = re.compile(r"\[@([^\]]+)\]")
 
@@ -129,6 +147,8 @@ class Page:
         self.parent: "Page | None" = None      # linked up by Site._link_pages
         self.attachments: List["Page"] = []
         self.og_image = ""  # set by Site._render_og_images
+        self.md_url = self.url.removesuffix(".html") + ".md"  # posts: Markdown source, for "Copy as Markdown"
+        self.series: List["Page"] = []  # all posts sharing this post's `series:`, in order
 
     @staticmethod
     def _parse_date(raw: Any, src: pathlib.Path) -> dt.date:
@@ -148,7 +168,7 @@ class Page:
             raise ValueError(f"{src}: date {raw!r} is not YYYY-MM-DD") from None
 
     def _make_excerpt(self, words: int = 35):
-        prose = re.sub(r'<pre.*?</pre>|<math.*?</math>', " ", self.html, flags=re.S)
+        prose = re.sub(r'<pre.*?</pre>|<math.*?</math>|<a class="cite.*?</a>|<section class="footnotes">.*?</section>', " ", self.html, flags=re.S)
         plain = html.unescape(re.sub(r"<[^>]+>", " ", prose)).split()
         return " ".join(plain[:words]) + " …" if plain else ""
 
@@ -187,6 +207,7 @@ class Site:
         self._render_redirects()
         self._render_tags()
         self._render_feed()
+        self._render_llms_txt()
         self._prune_dist(started)
         logging.info("Build finished → %s", self.dist)
 
@@ -222,6 +243,15 @@ class Site:
                 raise ValueError(f"{pg.src}: parent {pg.parent_slug!r} is not a post slug")
             pg.parent = posts[pg.parent_slug]
             pg.parent.attachments.append(pg)
+        # `series: <name>` groups posts; ordered by `part:` if given, otherwise by date
+        series: Dict[str, List[Page]] = {}
+        for pg in posts.values():
+            if pg.meta.get("series"):
+                series.setdefault(pg.meta["series"], []).append(pg)
+        for parts in series.values():
+            parts.sort(key=lambda p: (p.meta.get("part", 0), p.date))
+            for pg in parts:
+                pg.series = parts
 
     @staticmethod
     def _split_front(text: str):
@@ -232,8 +262,8 @@ class Site:
 
     def _md_to_html(self, md_text: str):
         # wrap tables so wide ones scroll sideways on phones instead of being cut off
-        out = _MD.render(md_text)
-        return out.replace("<table>", "<div class='overflow-x-auto'><table>").replace("</table>", "</table></div>")
+        out = _footnote_previews(_MD.render(md_text))
+        return out.replace("<table>", "<div class='table-scroll'><table>").replace("</table>", "</table></div>")
 
     # ----------------------------------------------------------- citations
     def _parse_author_name(self, raw: str) -> str:
@@ -381,12 +411,39 @@ class Site:
         t_page = self.env.get_template("page.html")
         today = dt.date.today()
         for pg in self.pages:
-            ctx = {"site": self.config, "page": pg, "today": today, "pages": self.pages}
+            ctx = {"site": self.config, "page": pg, "today": today, "pages": self.pages,
+                   "bibtex": self._bibtex(pg) if pg.is_post else ""}
             tpl = t_post if pg.is_post else t_page
             out = tpl.render(**ctx)
             dest = self.dist / pg.url.lstrip("/")
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(out, "utf8")
+            if pg.is_post:
+                (self.dist / pg.md_url.lstrip("/")).write_text(self._markdown_copy(pg), "utf8")
+
+    def _bibtex(self, pg: Page) -> str:
+        """A @misc entry for "Cite this post"."""
+        author = self.config.get("author", "")
+        *given, family = author.split() or ["Anon"]
+        title = pg.meta.get("title", pg.slug)
+        stop = {"a", "an", "the", "of", "on", "in", "and", "for", "to", "with", "through"}
+        first = next((w for w in re.findall(r"[a-z0-9]+", title.lower()) if w not in stop), pg.slug)
+        tex_title = re.sub(r"([&%#_$])", r"\\\1", title)
+        fields = [
+            f"  author = {{{family}, {' '.join(given)}}}" if given else f"  author = {{{family}}}",
+            f"  title = {{{{{tex_title}}}}}",
+            f"  year = {{{pg.date.year}}}",
+            f"  month = {pg.date:%b}".lower(),
+            f"  url = {{{self.config.get('base_url', '')}{pg.url}}}",
+            "  note = {Blog post}",
+        ]
+        return f"@misc{{{family.lower()}{pg.date.year}{first},\n" + ",\n".join(fields) + "\n}"
+
+    def _markdown_copy(self, pg: Page) -> str:
+        """The post's Markdown as published: title and URL on top, site-relative links made absolute."""
+        base = self.config.get("base_url", "")
+        body = re.sub(r"(\]\(|href=[\"'])/", rf"\g<1>{base}/", pg.body_md.strip())
+        return f"# {pg.meta.get('title', pg.slug)}\n\n{base}{pg.url}\n\n{body}\n"
 
     def _render_indexes(self):
         posts = sorted([p for p in self.pages if p.is_post], key=lambda x: x.date, reverse=True)
@@ -465,6 +522,22 @@ class Site:
 </rss>
 """
         (self.dist / "feed.xml").write_text(rss, "utf8")
+
+    def _render_llms_txt(self):
+        """/llms.txt (llmstxt.org): a plain index pointing at the Markdown copies of the posts."""
+        base = self.config.get("base_url", "")
+        unlink = lambda text: re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text or "")
+        lines = [f"# {self.config.get('site_name', '')}", ""]
+        if self.config.get("description"):
+            lines += [f"> {self.config['description']}", ""]
+        if self.config.get("tagline"):
+            lines += [f"{self.config.get('author', '')}: {unlink(self.config['tagline'])}.", ""]
+        posts = sorted((p for p in self.pages if p.is_post), key=lambda p: p.date, reverse=True)
+        lines += ["## Posts", ""] + [f"- [{p.meta.get('title', p.slug)}]({base}{p.md_url}): {p.excerpt}" for p in posts]
+        if self.config.get("projects"):
+            lines += ["", "## Projects", ""]
+            lines += [f"- [{pr['title']}]({pr['url']}): {pr.get('description', '')}".rstrip(": ") for pr in self.config["projects"]]
+        (self.dist / "llms.txt").write_text("\n".join(lines) + "\n", "utf8")
 
     # ------------------------------------------------------ asset helpers
     def _copy_static(self):

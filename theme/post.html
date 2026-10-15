@@ -1,10 +1,13 @@
 {% extends 'base.html' %}
 {% block content %}
+{% set part = page.series.index(page) + 1 if page.series else 0 %}
 <div class='post-layout'>
   <article>
     <header class='post-header'>
       <p class='post-meta'>
         <time datetime='{{ page.date }}'>{{ page.date.strftime('%-d %B %Y') }}</time><span>{{ page.reading_minutes }} min read</span>
+        {% if page.series | length > 1 %}<a href='#series'>Part {{ part }} of {{ page.series | length }}</a>{% endif %}
+        <button class='copy-md' data-src='{{ page.md_url }}' hidden><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='9' y='9' width='12' height='12' rx='2'/><path d='M5 15V5a2 2 0 0 1 2-2h10'/></svg><span>Copy as Markdown</span></button>
       </p>
       <h1 class='page-title'>{{ page.meta.title }}</h1>
       {% if page.meta.summary %}<p class='summary'>{{ page.meta.summary }}</p>{% endif %}
@@ -20,7 +23,7 @@
     </header>
 
     <!-- table of contents on narrower screens; the sidebar one takes over when there is room -->
-    <details class='toc-top' hidden>
+    <details class='box toc-top' hidden>
       <summary>On this page</summary>
       <ol></ol>
     </details>
@@ -28,6 +31,22 @@
     <div class='prose'>
       {{ page.html | safe }}
     </div>
+
+    {% if page.series | length > 1 %}
+    <nav id='series' class='series' aria-label='Series'>
+      <p class='label'>{{ page.meta.series }}</p>
+      <ol>
+        {% for p in page.series %}
+        <li>{% if p is sameas page %}<span aria-current='page'>{{ p.meta.title }}</span>{% else %}<a href='{{ p.url }}'>{{ p.meta.title }}</a>{% endif %}</li>
+        {% endfor %}
+      </ol>
+    </nav>
+    {% endif %}
+
+    <details class='box cite-post'>
+      <summary>Cite this post</summary>
+      <pre><code>{{ bibtex }}</code></pre>
+    </details>
 
     <footer class='post-footer'>
       <a href='/' class='back'>← Home</a>
@@ -44,38 +63,5 @@
     </nav>
   </aside>
 </div>
-<script>
-  // table of contents from the post's h2/h3 (ids are added at build time),
-  // in the sidebar on wide screens and in a collapsible box above the text otherwise
-  document.addEventListener('DOMContentLoaded', () => {
-    const toc = document.getElementById('toc');
-    const top = document.querySelector('.toc-top');
-    const hs = [...document.querySelectorAll('article .prose h2, article .prose h3')];
-    if (!hs.length) return;
-    toc.hidden = top.hidden = false;
-    const fill = (list) => hs.map(h => {
-      const li = document.createElement('li');
-      const a = document.createElement('a');
-      a.href = '#' + h.id;
-      a.textContent = h.textContent;
-      if (h.tagName === 'H3') a.className = 'sub';
-      li.appendChild(a);
-      list.appendChild(li);
-      return a;
-    });
-    fill(top.querySelector('ol'));
-    const links = fill(toc.querySelector('ol'));
-    // highlight the section whose heading was passed most recently
-    const update = () => {
-      let cur = 0;
-      hs.forEach((h, i) => { if (h.getBoundingClientRect().top < 120) cur = i; });
-      links.forEach((a, i) => a.classList.toggle('active', i === cur));
-    };
-    update();
-    addEventListener('scroll', update, { passive: true });
-    // the jump to a #section can land after load without a scroll event
-    addEventListener('load', () => setTimeout(update, 100));
-    addEventListener('hashchange', update);
-  });
-</script>
+<script src='/static/post.js' defer></script>
 {% endblock %}

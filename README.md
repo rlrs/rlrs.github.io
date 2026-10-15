@@ -25,6 +25,8 @@ and publishes `dist/` to GitHub Pages. Files left over from deleted pages are re
   summary: "One sentence."  # used on the index, in RSS and meta tags; otherwise the first 35 words
   tags: ["llms"]            # optional, creates /blog/tags/<tag>.html
   bib: refs.bib             # optional, BibTeX file next to the post, enabling [@key] citations
+  series: Series name       # optional, groups posts: "Part n of m" and a list of all parts (posts)
+  part: 1                   # optional, order within the series; otherwise by date (posts)
   wide: true                # optional, wider layout (pages)
   nav_title: Short          # optional, nav label instead of the title (pages)
   nav: false                # optional, keep a page out of the nav (pages)
@@ -36,7 +38,10 @@ and publishes `dist/` to GitHub Pages. Files left over from deleted pages are re
   ```
 
 - **Math:** `$inline$` and `$$display$$` (converted to MathML at build time, so no math JavaScript). Prices like `$5 and $10` stay plain text; write `\$` to force a literal dollar sign.
-- **Code:** fenced blocks with a language are highlighted by Pygments.
+- **Footnotes:** `text[^note]` with `[^note]: The note.` anywhere in the post; the marker previews the note on hover.
+- **Code:** fenced blocks with a language are highlighted by Pygments, and get a copy button.
+- **Extras on every post:** a `#` link on each `##`/`###` heading, "Copy as Markdown" (the build writes
+  `/blog/<slug>.md` next to the page), and a "Cite this post" BibTeX entry. `/llms.txt` indexes all posts.
 - `static/` is copied to `dist/static/` as-is.
 - **Site settings** live in `config.yml`: `site_name`, `author`, `base_url`, `description`, the header's
   `tagline` (one-line Markdown) and `clock` (city + time zone), and the home page's `upcoming` (unpublished

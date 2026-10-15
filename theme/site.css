@@ -153,6 +153,9 @@ main { flex: 1; }
 .page.wide { max-width: none; }
 .post-header, .page-header { padding-bottom: 2.5rem; }
 .post-meta { display: flex; flex-wrap: wrap; gap: 0 1rem; font-size: .95rem; color: var(--muted); }
+.copy-md { display: inline-flex; align-items: center; gap: .35rem; color: inherit; transition: color .15s; }
+.copy-md svg { width: .9em; height: .9em; }
+.copy-md:hover { color: var(--ink); }
 .back { font-size: .95rem; color: var(--muted); }
 .back b { font-weight: 500; color: var(--ink-soft); }
 
@@ -188,16 +191,59 @@ main { flex: 1; }
 #toc a.sub { padding-left: 1.5rem; }
 #toc a:hover, #toc a.active { color: var(--ink); }
 #toc a.active { border-color: var(--ink); }
-.toc-top { margin-bottom: 2.5rem; padding: .75rem 1rem; border: 1px solid var(--line); border-radius: .375rem; font-size: .95rem; }
-.toc-top summary { display: flex; justify-content: space-between; list-style: none; font-weight: 500; color: var(--ink); cursor: pointer; }
-.toc-top summary::-webkit-details-marker { display: none; }
-.toc-top summary::after { content: "+"; color: var(--muted); }
-.toc-top[open] summary::after { content: "−"; }
+/* collapsible boxes: contents above the text on narrower screens, "Cite this post" */
+.box { padding: .75rem 1rem; border: 1px solid var(--line); border-radius: .375rem; font-size: .95rem; }
+.box summary { display: flex; justify-content: space-between; list-style: none; font-weight: 500; color: var(--ink); cursor: pointer; }
+.box summary::-webkit-details-marker { display: none; }
+.box summary::after { content: "+"; color: var(--muted); }
+.box[open] summary::after { content: "−"; }
+.toc-top { margin-bottom: 2.5rem; }
 .toc-top ol { list-style: none; margin: .75rem 0 .25rem; padding: 0; }
 .toc-top li + li { margin-top: .4rem; }
 .toc-top a { color: var(--muted); }
 .toc-top a:hover { color: var(--ink); }
 .toc-top a.sub { padding-left: 1rem; }
+.cite-post { margin-top: 3rem; }
+.cite-post .code { margin: .75rem 0 .25rem; }
+.cite-post pre { overflow-x: auto; margin: 0; padding: .75rem 1rem; border-radius: .3rem; background: var(--code-bg); font-size: .8rem; line-height: 1.55; color: var(--ink); }
+
+/* other parts of a series, after the post */
+.series { margin-top: 3.5rem; }
+.series ol { margin: 0; padding-left: 1.25rem; }
+.series li { margin: .35rem 0; padding-left: .2rem; }
+.series li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+.series a { color: var(--muted); }
+.series a:hover { color: var(--accent); }
+.series [aria-current] { font-weight: 500; color: var(--ink); }
+
+/* "#" after headings (added by static/post.js): shown on hover, copies the section's link */
+.prose .anchor { margin-left: .1em; font-weight: 400; color: var(--muted); text-decoration: none; opacity: 0; transition: opacity .15s, color .15s; }
+.prose :is(h2, h3):hover .anchor, .prose .anchor:focus-visible { opacity: 1; }
+.prose .anchor:hover { color: var(--accent); }
+
+/* copy button on code blocks (added by static/post.js) */
+.code { position: relative; }
+.prose .code { margin: 1.15em 0; }
+.prose .code > pre { margin: 0; }
+.code-copy {
+  position: absolute;
+  top: .45rem;
+  right: .45rem;
+  padding: .1rem .5rem;
+  border: 1px solid var(--line);
+  border-radius: .3rem;
+  background: var(--paper);
+  font-size: .75rem;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity .15s, color .15s;
+}
+.code:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
+.code-copy:hover { color: var(--ink); }
+@media (hover: none) {
+  .code-copy { opacity: 1; }
+  .prose .anchor { opacity: .5; }
+}
 
 /* ---- long-form text (:where keeps specificity low so components can override) ---- */
 .prose { font-size: 1.09rem; line-height: 1.65; color: var(--ink-soft); }
@@ -224,6 +270,8 @@ main { flex: 1; }
 .prose :where(img) { height: auto; border-radius: .3rem; }
 .prose :where(:not(pre) > code) { padding: .12em .35em; border-radius: .3rem; background: var(--code-bg); font-size: .84em; font-weight: 500; color: var(--ink); }
 .prose :where(pre) { overflow-x: auto; padding: .9em 1.1em; border-radius: .4rem; background: var(--code-bg); font-size: .85em; line-height: 1.6; color: var(--ink); }
+.prose .table-scroll { overflow-x: auto; margin: 1.15em 0; }
+.prose .table-scroll > table { margin: 0; }
 .prose :where(table) { width: 100%; border-collapse: collapse; font-size: .85rem; line-height: 1.45; }
 .prose :where(th) { padding: 0 .6em .5em; border-bottom: 1px solid var(--ink); font-weight: 500; text-align: left; vertical-align: bottom; color: var(--muted); }
 .prose :where(td) { padding: .55em .6em; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -266,6 +314,12 @@ main { flex: 1; }
   pointer-events: none;
 }
 .cite:hover::after, .cite:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+
+/* footnotes: markers reuse the citation tooltip; the notes themselves sit small at the end */
+.footnotes-sep { display: none; }
+.prose .footnotes { margin-top: 3em; padding-top: 1.25em; border-top: 1px solid var(--line); font-size: .9em; color: var(--muted); }
+.prose .footnotes p { margin: .3em 0; }
+.prose .footnote-backref { text-decoration: none; }
 
 /* ---- leaderboard widget (static/leaderboard-widget.js) ---- */
 leaderboard-widget { display: block; }
