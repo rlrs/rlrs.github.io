@@ -537,6 +537,9 @@ class Site:
         if self.config.get("projects"):
             lines += ["", "## Projects", ""]
             lines += [f"- [{pr['title']}]({pr['url']}): {pr.get('description', '')}".rstrip(": ") for pr in self.config["projects"]]
+        if self.config.get("elsewhere"):
+            lines += ["", "## Elsewhere", ""]
+            lines += [f"- [{e['title']}]({e['url']}): {e.get('note', '')}".rstrip(": ") for e in self.config["elsewhere"]]
         (self.dist / "llms.txt").write_text("\n".join(lines) + "\n", "utf8")
 
     # ------------------------------------------------------ asset helpers
