@@ -27,7 +27,6 @@
   --accent: #2747d6;
   --accent-soft: #e4e8fa;
   --code-bg: #ecebe5;
-  --now: #2fb36b;
   --lb-good: #a8b8f0;   /* leaderboard: best value in a column */
   --lb-mid: #e6eafa;
   --sans: "Familjen Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -116,17 +115,6 @@ main { flex: 1; }
 }
 .site-footer a:hover, .back:hover { color: var(--ink); }
 .site-footer .links { display: flex; flex-wrap: wrap; gap: 0 1.25rem; }
-.now b { font-weight: 500; color: var(--ink); }
-.now::before {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: .5rem;
-  border-radius: 50%;
-  background: var(--now);
-  vertical-align: 1px;
-}
 
 /* ---- lists of posts and links ---- */
 .list { list-style: none; padding: 0; border-bottom: 1px solid var(--line); }

@@ -39,9 +39,8 @@ and publishes `dist/` to GitHub Pages. Files left over from deleted pages are re
 - **Code:** fenced blocks with a language are highlighted by Pygments.
 - `static/` is copied to `dist/static/` as-is.
 - **Site settings** live in `config.yml`: `site_name`, `author`, `base_url`, `description`, the header's
-  `tagline` and `clock` (city + time zone), an optional footer `now` line, and the home page's `upcoming`
-  (unpublished titles shown, unlinked, at the top of Writing), `projects` and `elsewhere` lists. `tagline` and
-  `now` are one-line Markdown.
+  `tagline` (one-line Markdown) and `clock` (city + time zone), and the home page's `upcoming` (unpublished
+  titles shown, unlinked, at the top of Writing), `projects` and `elsewhere` lists.
 - **Theme:** Jinja2 templates in `theme/`; plain CSS in `theme/site.css`, written to `dist/site.css` together
   with the Pygments colours. Colours are CSS variables at the top of `site.css`, swapped for dark mode. The font
   is self-hosted Familjen Grotesk in `static/fonts/`, SIL OFL. The built site loads nothing from other hosts.

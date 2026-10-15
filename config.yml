@@ -10,9 +10,6 @@ clock:
   city: Copenhagen
   timezone: Europe/Copenhagen
 
-# footer: optional one-liner about what you're up to (Markdown); leave out to hide
-now: training models...
-
 # home page, right column
 projects:
   - title: maester
