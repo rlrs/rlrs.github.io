@@ -11,7 +11,7 @@ part: 1
 
 - starting a sandbox in about a second by reading its image lazily;
 - fitting the image corpus on a single disk by deduplicating file content;
-- failing reads with an error when the reader daemon dies or a chunk is corrupt, since silent zeros would turn into wrong rewards;
+- making sure a crashed reader daemon or a corrupt chunk ends a read with an error instead of wrong data;
 - pausing each sandbox at every model wait and moving its pages to swap under memory pressure;
 - detecting those waits from packet headers on the worker;
 - prefetching a sandbox's memory before it resumes.
@@ -48,7 +48,7 @@ The sandbox service runs on a gateway VM and a set of worker VMs. Each sandbox d
 
 ![The platform around a sandbox, and the three paths it depends on: commands through the gateway (1), model calls through the relay (2) and image bytes from the store node (3).](hurry-up-and-wait-part-1/01-platform.svg)
 
-The rest of the post covers my solutions to the issues I encountered while building our sandbox service. Section 2 covers isolation: gVisor runs on these VMs but slows down syscall-heavy tools. Section 3 is about images: the node daemon reads them lazily from a deduplicated store, which moves fetches into the middle of the agent's run. Section 4 is about memory: pausing each sandbox at model waits fits more sandboxes into less active memory. Section 5 lists the trade-offs and what comes next.
+The rest of the post covers my solutions to the issues I encountered while building our sandbox service. Section 2 covers isolation: gVisor runs on these VMs but slows down syscall-heavy tools. Section 3 is about images: the node daemon reads them lazily from a deduplicated store, which moves fetches into the middle of the agent's run. Section 4 is about memory: the node daemon pauses each sandbox while it waits for the model, and moves its pages to swap when the worker runs short. Section 5 lists the trade-offs and what comes next.
 
 ## 2. Isolation under gVisor
 
@@ -140,7 +140,7 @@ We use stock nydusd in NBD mode. NBD failed closed in the comparison: when nydus
 
 ![The layers of a gVisor sandbox. Image reads come through nydusd and the shared host page cache, while guest writes stay in the Sentry.](hurry-up-and-wait-part-1/04-gvisor-layers.svg)
 
-A live nydusd can still serve wrong bytes. For example, after a fault, S3, the store node or the chunk index might return the wrong part of a pack file. nydusd is the last process to handle the bytes before the kernel, so it checks each chunk against an expected digest. The gateway signs a root digest for each image with an Ed25519 key, and a chain of digests leads from that root down to the sha256 of each chunk. The node daemon checks the signature before it starts nydusd. On a mismatch, nydusd returns EIO, just as the kernel does when nydusd dies. The orchestrator masks the failed rollout either way. S3, the store node and the chunk index can therefore stay untrusted, and we can change any of them without revisiting integrity.
+A live nydusd can still serve wrong bytes. For example, after a fault, S3, the store node or the chunk index might return the wrong part of a pack file. nydusd is the last process to handle the bytes before the kernel, so it checks each chunk against an expected digest. The gateway signs a root digest for each image with an Ed25519 key, and a chain of digests leads from that root down to the sha256 of each chunk. The node daemon checks the signature before it starts nydusd. On a mismatch, nydusd returns EIO, just as the kernel does when nydusd dies. The orchestrator masks the failed rollout either way. S3, the store node and the chunk index can therefore stay untrusted, and we can change any of them without reworking the checks.
 
 When the store node is slow, a read blocks until the fetch completes. Some GETs to our object storage stalled, often again on retry. nydusd therefore retries a fetch for up to 270 s. We set the kernel's NBD timeout above that, because each NBD timeout permanently closes one of the device's connections. A stalled fetch then adds to the agent's command time, and the sandbox holds its memory while it waits.
 
@@ -207,7 +207,7 @@ Hibernation is the better choice for waits longer than about five minutes (Secti
 
 ## 5. Trade-offs and next steps
 
-Lazy images and pausing cut the two longest delays in a sandbox's life. On SWE-bench images, the median first create went from 92 s to 1.3 s, and under memory pressure, the p95 wake went from 14.2 s to 0.13 s.
+Lazy image reads and pausing cut the two longest delays in a rollout. On SWE-bench images, the median first create went from 92 s to 1.3 s, and under memory pressure, the p95 wake went from 14.2 s to 0.13 s.
 
 The design comes with costs:
 
