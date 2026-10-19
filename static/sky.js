@@ -363,9 +363,11 @@ if (reduceMotion) {
   const tick = (t) => { requestAnimationFrame(tick); if (t - last >= 1000 / 15 - 2) { last = t; render(t / 1000); } };
   requestAnimationFrame(tick);
 }
-let rt, lastW = fig ? fig.clientWidth : 0;
+// redraw the view when its size changes (its height follows the window's)
+const viewSize = () => (fig ? `${fig.clientWidth}x${fig.querySelector(".sky-view").clientHeight}` : "");
+let rt, lastSize = viewSize();
 addEventListener("resize", () => {
   clearTimeout(rt);
-  rt = setTimeout(() => { if (fig && fig.clientWidth !== lastW) { lastW = fig.clientWidth; buildView(); if (reduceMotion) render(performance.now() / 1000); } }, 150);
+  rt = setTimeout(() => { if (fig && viewSize() !== lastSize) { lastSize = viewSize(); buildView(); if (reduceMotion) render(performance.now() / 1000); } }, 150);
 });
 })();

@@ -108,7 +108,7 @@ main { flex: 1; }
   flex-wrap: wrap;
   justify-content: space-between;
   gap: .5rem 1.5rem;
-  margin-top: 6rem;
+  margin-top: 3.5rem;
   padding-bottom: 2rem;
   font-size: .9rem;
   color: var(--muted);
@@ -119,9 +119,9 @@ main { flex: 1; }
 /* ---- lists of posts and links ---- */
 .list { list-style: none; padding: 0; border-bottom: 1px solid var(--line); }
 .list li { border-top: 1px solid var(--line); }
-.list a { display: block; padding: .75rem 0; }
+.list a { display: block; padding: .65rem 0; }
 .list .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1.25rem; }
-.list span.row { padding: .75rem 0; }   /* upcoming post: not a link yet */
+.list span.row { padding: .65rem 0; }   /* upcoming post: not a link yet */
 .list .title { font-weight: 500; color: var(--ink); text-wrap: pretty; transition: color .15s; }
 .list a:hover .title { color: var(--accent); }
 .list .sub { display: block; font-size: .9rem; color: var(--muted); }
@@ -129,12 +129,12 @@ main { flex: 1; }
 
 /* home: Writing | Projects + Elsewhere */
 .index { display: grid; gap: 3rem 2.5rem; align-items: start; margin-top: 6rem; }
-.index-side { display: grid; gap: 3rem; }
+.index-side { display: grid; gap: 2.5rem; }
 
 /* ---- the sky view and the post figures (static/sky.js; only shown when JavaScript runs) ---- */
 .sky, .plate { display: none; }
 .js .sky { display: block; margin: 3rem 0 0; }
-.js .sky + .index { margin-top: 3.25rem; }
+.js .sky + .index { margin-top: 2.75rem; }
 .sky-view { height: 190px; }
 .sky-view canvas, .plate canvas { display: block; }
 .js .plate { display: block; width: 72px; height: 72px; }
@@ -461,8 +461,9 @@ leaderboard-widget { display: block; }
   .site-header { grid-template-columns: 1fr 1fr; }
   .tools { margin-left: auto; }
   .index { grid-template-columns: 1fr 1fr; margin-top: 9rem; }
-  .js .sky { margin-top: 4.5rem; }
-  .sky-view { height: 250px; }
+  .js .sky { margin-top: 2.5rem; }
+  /* as tall as the window allows without scrolling (the rest of the home page is ~720px), 180–250px */
+  .sky-view { height: clamp(180px, calc(100vh - 720px), 250px); }
   .archive, .post-layout, .page { margin-top: 6rem; }
   .page-title { font-size: 2.75rem; }
   .lb-table .model { max-width: none; white-space: nowrap; overflow-wrap: normal; }
