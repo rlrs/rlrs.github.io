@@ -23,20 +23,6 @@
 </ul>
 {% endmacro %}
 
-{% macro link_list(items) %}
-<ul class='list'>
-  {% for it in items %}
-  {% set sub = it.description or it.note %}
-  <li>
-    <a href='{{ it.url }}'{% if it.icon %} class='has-icon'{% endif %}>
-      {% if it.icon %}<span class='icon'>{% include 'icons/' ~ it.icon ~ '.svg' %}</span>{% endif %}
-      <span class='title'>{{ it.title }}</span>
-      {% if sub %}<span class='sub'>{{ sub }}</span>{% endif %}
-    </a>
-  </li>
-  {% endfor %}
-</ul>
-{% endmacro %}
 
 {% block content %}
 {% if site.sky %}
@@ -52,16 +38,10 @@
   </section>
   <div class='index-side'>
     {% if site.projects %}
-    <section>
-      <h2 class='label'>Projects</h2>
-      {{ link_list(site.projects) }}
-    </section>
+    <p>Projects: {% for pr in site.projects %}<a href='{{ pr.url }}'>{{ pr.title }}</a>{% if pr.description %}, {{ pr.description[:1] | lower }}{{ pr.description[1:] }}{% endif %}{{ '; ' if not loop.last else '.' }}{% endfor %}</p>
     {% endif %}
     {% if site.elsewhere %}
-    <section>
-      <h2 class='label'>Elsewhere</h2>
-      {{ link_list(site.elsewhere) }}
-    </section>
+    <p>Elsewhere: {% for it in site.elsewhere %}<a href='{{ it.url }}'>{{ it.title }}</a>{{ ', ' if not loop.last else '.' }}{% endfor %} <a href='/feed.xml'>RSS</a>.</p>
     {% endif %}
   </div>
 </div>

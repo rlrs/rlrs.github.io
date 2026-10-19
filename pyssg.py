@@ -389,26 +389,21 @@ class Site:
         self._draw_og_card(site_name, "", self.config.get("description") or domain, self.dist / "og" / "index.png")
 
     def _draw_og_card(self, title: str, kicker: str, footer: str, dest: pathlib.Path):
-        font_path = str(self.root / "theme" / "fonts" / "FamiljenGrotesk-var.ttf")
-
-        def font_at(size: int, weight: int):
-            f = ImageFont.truetype(font_path, size)
-            f.set_variation_by_axes([weight])
-            return f
+        fonts = self.root / "theme" / "fonts"
+        font_at = lambda size, bold=False: ImageFont.truetype(str(fonts / f"site-serif-{'bold' if bold else 'regular'}.ttf"), size)
 
         w, h = self._OG_SIZE
         pad = 80
         # colours mirror the light theme tokens in theme/site.css
-        ink, muted, accent = "#191919", "#74716a", "#2747d6"
-        img = Image.new("RGB", (w, h), "#f6f5f1")      # --paper
+        ink, muted = "#111111", "#666666"
+        img = Image.new("RGB", (w, h), "#ffffff")      # --paper
         d = ImageDraw.Draw(img)
-        d.rectangle([0, 0, w, 10], fill=accent)
-        small = font_at(30, 400)
+        small = font_at(30)
         if kicker:
             d.text((pad, pad), kicker, font=small, fill=muted)
         # largest title size (76 → 48px) that wraps into at most 4 lines
         for size in range(76, 47, -4):
-            font = font_at(size, 600)
+            font = font_at(size, bold=True)
             lines = self._wrap(title, font, w - 2 * pad)
             if len(lines) <= 4:
                 break

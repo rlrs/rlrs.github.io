@@ -329,7 +329,7 @@ if (fig) {
   }
 }
 const plates = plateEls.map((el) => {
-  const p = makePlate(el.dataset.seed, 72, el.hasAttribute("data-developing"));
+  const p = makePlate(el.dataset.seed, el.clientWidth || 56, el.hasAttribute("data-developing"));
   el.append(p);
   return p;
 });

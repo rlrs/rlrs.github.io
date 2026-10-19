@@ -15,7 +15,7 @@ clock:
 sky:
   slider: false   # true adds a time-of-day slider under the view
 
-# home page, right column
+# home page: written out as sentences under the Writing list
 projects:
   - title: sandboxes
     url: https://github.com/rlrs/sandboxes
@@ -28,15 +28,12 @@ elsewhere:
   - title: GitHub
     url: https://github.com/rlrs
     note: rlrs
-    icon: github          # theme/icons/<icon>.svg
   - title: X
     url: https://x.com/synquid
     note: "@synquid"
-    icon: x
   - title: Hugging Face
     url: https://huggingface.co/synquid
     note: synquid
-    icon: huggingface
 
 # home page, top of the Writing list: posts that aren't published yet (no page, no RSS)
 upcoming: []

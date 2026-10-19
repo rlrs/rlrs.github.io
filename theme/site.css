@@ -1,48 +1,62 @@
 /* rlrs.dk – plain CSS. pyssg.py appends the Pygments colours and writes dist/site.css. */
 
-/* ---- font (self-hosted variable font, SIL OFL) ---- */
+/* ---- font: Site Serif, a subset of Charis SIL (Charter), SIL OFL; see static/fonts/OFL-SiteSerif.txt ---- */
 @font-face {
-  font-family: "Familjen Grotesk";
-  src: url("/static/fonts/familjen-grotesk-var.woff2") format("woff2");
-  font-weight: 400 700;
+  font-family: "Site Serif";
+  src: url("/static/fonts/site-serif-regular.woff2") format("woff2");
+  font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "Familjen Grotesk";
-  src: url("/static/fonts/familjen-grotesk-italic-var.woff2") format("woff2");
-  font-weight: 400 700;
+  font-family: "Site Serif";
+  src: url("/static/fonts/site-serif-italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Site Serif";
+  src: url("/static/fonts/site-serif-bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Site Serif";
+  src: url("/static/fonts/site-serif-bold-italic.woff2") format("woff2");
+  font-weight: 700;
   font-style: italic;
   font-display: swap;
 }
 
 /* ---- design tokens: light by default, swapped under .dark (set by the toggle in base.html) ---- */
 :root {
-  --paper: #fafaf8;
-  --surface: #fdfdfc;
-  --ink: #171716;
-  --ink-soft: #2c2b29;
-  --muted: #716f6b;
-  --line: #e7e5e1;
-  --accent: #2747d6;
-  --accent-soft: #e4e8fa;
-  --code-bg: #f0efec;
+  --paper: #ffffff;
+  --surface: #ffffff;
+  --ink: #111111;
+  --ink-soft: #1c1c1c;
+  --muted: #666666;
+  --line: #dddddd;
+  --accent: #1d3fd8;
+  --accent-soft: #e6ebff;
+  --code-bg: #f3f3f3;
   --lb-good: #a8b8f0;   /* leaderboard: best value in a column */
   --lb-mid: #e6eafa;
-  --sans: "Familjen Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font: "Site Serif", Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
 }
 .dark {
-  --paper: #161616;
-  --surface: #1c1c1c;
+  --paper: #111111;
+  --surface: #111111;
   --ink: #ececec;
-  --ink-soft: #d2d2d2;
-  --muted: #8e8e8e;
-  --line: #2b2b2b;
-  --accent: #8fa6f5;
-  --accent-soft: #1f2638;
-  --code-bg: #202020;
+  --ink-soft: #dddddd;
+  --muted: #9a9a9a;
+  --line: #333333;
+  --accent: #8eaaff;
+  --accent-soft: #1d2440;
+  --code-bg: #1d1d1d;
   --lb-good: #2c3f86;
   --lb-mid: #1d2233;
   color-scheme: dark;
@@ -55,7 +69,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font: 400 1rem/1.5 var(--sans);
+  font: 400 1.08rem/1.5 var(--font);
   overflow-x: hidden;
 }
 h1, h2, h3, h4, p, ul, ol, figure { margin: 0; }
@@ -69,9 +83,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* small section labels ("Writing", "Projects", ...) */
 .label {
-  margin-bottom: .625rem;
-  font-size: .9rem;
-  font-weight: 600;
+  margin-bottom: .5rem;
+  font-size: 1.15rem;
+  font-weight: 700;
   color: var(--ink);
 }
 
@@ -80,15 +94,16 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  max-width: 70rem;
+  max-width: 46rem;
   margin: 0 auto;
-  padding: 2rem 1.25rem 0;
+  padding: 2rem 1.6rem 0;
 }
+.wrap:has(.post-layout, .page.wide) { max-width: 74rem; }
 main { flex: 1; }
 
 .site-header { display: grid; gap: 1rem 2.5rem; align-items: start; }
-.site-header .name { font-weight: 600; }
-.tagline { color: var(--muted); }
+.site-header .name { font-size: 1.5rem; font-weight: 700; }
+.tagline { color: var(--muted); font-style: italic; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1.5rem; }
 .bar nav { display: flex; gap: 1.25rem; }
 .bar nav a[aria-current] { box-shadow: inset 0 -1.5px 0 currentColor; }
@@ -115,28 +130,26 @@ main { flex: 1; }
 .site-footer .links { display: flex; flex-wrap: wrap; gap: 0 1.25rem; }
 
 /* ---- lists of posts and links ---- */
-.list { list-style: none; padding: 0; border-bottom: 1px solid var(--line); }
-.list li { border-top: 1px solid var(--line); }
-.list a { display: block; padding: .65rem 0; }
+.list { list-style: none; padding: 0; }
+.list a { display: block; padding: .35rem 0; }
 .list .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1.25rem; }
-.list span.row { padding: .65rem 0; }   /* upcoming post: not a link yet */
-.list .title { font-weight: 500; color: var(--ink); text-wrap: balance; transition: color .15s; }
-.list a:hover .title { color: var(--accent); }
+.list span.row { padding: .35rem 0; }   /* upcoming post: not a link yet */
+.list .title { text-wrap: balance; }
 .list .sub { display: block; font-size: .9rem; color: var(--muted); }
 .list time, .list .soon { flex-shrink: 0; font-size: .9rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* home: Writing | Projects + Elsewhere */
-.index { display: grid; gap: 3rem 2.5rem; align-items: start; margin-top: 6rem; }
-.index-side { display: grid; gap: 2.5rem; }
+.index { display: grid; gap: 2rem; align-items: start; margin-top: 6rem; }
+.index-side p { margin: 0 0 .6rem; }
 
 /* ---- the sky view and the post figures (static/sky.js; only shown when JavaScript runs) ---- */
 .sky, .plate { display: none; }
 .js .sky { display: block; margin: 3rem 0 0; }
-.js .sky + .index { margin-top: 2.75rem; }
+.js .sky + .index { margin-top: 2rem; }
 .sky-view { height: 190px; }
 .sky-view canvas, .plate canvas { display: block; }
-.js .plate { display: block; width: 72px; height: 72px; }
-.js .list .has-plate { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 1.1rem; }
+.js .plate { display: block; width: 56px; height: 56px; }
+.js .list .has-plate { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: .9rem; }
 
 /* time-of-day slider (config.yml: sky: slider: true): a hairline timeline under the view */
 .sky-time { position: relative; margin-top: .4rem; }
@@ -153,19 +166,13 @@ main { flex: 1; }
 .sky-back { color: var(--muted); }
 .sky-back:hover { color: var(--ink); }
 
-/* small logos next to the Elsewhere links */
-.list .has-icon { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: .85rem; align-items: center; }
-.list .has-icon .icon { grid-row: span 2; width: 22px; height: 22px; color: var(--ink); transition: color .15s; }
-.list .has-icon .icon svg { display: block; width: 100%; height: 100%; }
-.list .has-icon:hover .icon { color: var(--accent); }
-
 /* ---- page titles ---- */
 .page-title {
   margin-top: .75rem;
   font-size: 2rem;
-  font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: -.025em;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.01em;
   color: var(--ink);
   text-wrap: balance;
 }
@@ -275,22 +282,25 @@ main { flex: 1; }
 }
 
 /* ---- long-form text (:where keeps specificity low so components can override) ---- */
-.prose { font-size: 1.09rem; line-height: 1.65; color: var(--ink-soft); }
+.prose { font-size: 1em; line-height: 1.6; color: var(--ink-soft); }
 .prose > :first-child { margin-top: 0; }
 .prose :where(p, ul, ol, pre, blockquote, figure, table) { margin: 1.15em 0; }
-.prose :where(h2, h3, h4) { font-weight: 600; letter-spacing: -.012em; line-height: 1.3; color: var(--ink); scroll-margin-top: 2rem; }
+.prose :where(h2, h3, h4) { font-weight: 700; letter-spacing: -.005em; line-height: 1.3; color: var(--ink); scroll-margin-top: 2rem; }
 .prose :where(h2) { font-size: 1.3em; margin: 2.2em 0 .6em; }
 .prose :where(h3, h4) { font-size: 1.1em; margin: 1.8em 0 .5em; }
-.prose :where(strong) { font-weight: 600; color: var(--ink); }
-.prose :where(a:not(.cite)) {
+.prose :where(strong) { font-weight: 700; color: var(--ink); }
+/* links everywhere: black, with a dotted underline; blue on hover */
+.tagline a, .index-side a, .site-footer a, .list .title, .prose :where(a:not(.cite, .anchor, .footnote-backref)) {
   color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  text-decoration-thickness: 1.5px;
+  text-decoration: underline dotted color-mix(in srgb, var(--ink) 55%, transparent);
+  text-decoration-thickness: 1px;
   text-underline-offset: 3px;
   transition: color .15s, text-decoration-color .15s;
 }
-.prose :where(a:not(.cite)):hover { color: var(--accent); text-decoration-color: var(--accent); }
+.tagline a:hover, .index-side a:hover, .site-footer a:hover, .list a:hover .title, .prose :where(a:not(.cite, .anchor, .footnote-backref)):hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
 .prose :where(ul, ol) { padding-left: 1.5em; }
 .prose :where(li) { margin: .4em 0; padding-left: .2em; }
 .prose :where(li)::marker { color: var(--muted); }
@@ -326,7 +336,7 @@ main { flex: 1; }
 }
 .dark .fig { --cds-chart-status-critical: #ef8a76; }
 .fig-scroll { overflow-x: auto; }   /* narrow screens: scroll the drawing rather than shrink its text */
-.fig svg { display: block; width: 100%; min-width: 34rem; height: auto; font-family: var(--sans); font-variant-numeric: tabular-nums; }
+.fig svg { display: block; width: 100%; min-width: 34rem; height: auto; font-family: var(--font); font-variant-numeric: tabular-nums; }
 .fig figcaption { margin-top: .75em; font-size: .9rem; line-height: 1.5; color: var(--muted); }
 
 /* citation tooltips ([@key] in posts) */
@@ -474,10 +484,10 @@ leaderboard-widget { display: block; }
 
 /* ---- wider screens ---- */
 @media (min-width: 640px) {
-  .wrap { padding: 2.5rem 3rem 0; }
-  .site-header { grid-template-columns: 1fr 1fr; }
+  .wrap { padding: 2.5rem 4rem 0; }
+  .site-header { grid-template-columns: 1fr auto; }
   .tools { margin-left: auto; }
-  .index { grid-template-columns: 1fr 1fr; margin-top: 9rem; }
+  .index { margin-top: 9rem; }
   .js .sky { margin-top: 2.5rem; }
   /* a first guess; static/sky.js then fits the view to the space left in the window (180–250px) */
   .sky-view { height: clamp(180px, calc(100vh - 720px), 250px); }

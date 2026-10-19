@@ -47,9 +47,10 @@ and publishes `dist/` to GitHub Pages. Files left over from deleted pages are re
   `tagline` (one-line Markdown) and `clock` (city + time zone), and the home page's `upcoming` (unpublished
   titles shown, unlinked, at the top of Writing), `projects` and `elsewhere` lists.
   `sky:` turns on the home page's dithered view of the sky over the Øresund and a lit 3D figure next to each
-  post (`static/sky.js`; `slider: true` adds a time-of-day slider). `elsewhere` items can take an `icon:`
-  naming an SVG in `theme/icons/`. Older dither experiments live in `experiments/` (not part of the site).
+  post (`static/sky.js`; `slider: true` adds a time-of-day slider). Older dither experiments live in
+  `experiments/` (not part of the site).
 - **Theme:** Jinja2 templates in `theme/`; plain CSS in `theme/site.css`, written to `dist/site.css` together
   with the Pygments colours. Colours are CSS variables at the top of `site.css`, swapped for dark mode. The font
-  is self-hosted Familjen Grotesk in `static/fonts/`, SIL OFL. The built site loads nothing from other hosts.
+  is self-hosted Site Serif (a renamed Latin subset of Charis SIL, i.e. Charter) in `static/fonts/`, SIL OFL.
+  The built site loads nothing from other hosts.
   Each page also gets a generated 1200×630 link-preview card under `/og/`, drawn with the font in `theme/fonts/`.
