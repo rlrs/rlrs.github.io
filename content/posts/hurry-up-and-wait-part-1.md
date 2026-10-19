@@ -106,7 +106,7 @@ In synchronous training, slots sit empty and the trainer idles until the batch's
 
 ### 2.2 The workload in numbers
 
-The table lists published values for rollout fleets next to ours. The read-fraction and duty-cycle rows matter most here: they are the reason for the lazy image reads of Section 4 and the pausing of Section 5.
+The table lists published values for rollout fleets next to ours. The read fraction is the reason for the lazy image reads of Section 4, and the duty cycle for the pausing of Section 5.
 
 | Quantity | Published values | This deployment |
 | --- | --- | --- |
@@ -158,7 +158,7 @@ An average 300 s rollout finishes about 5 trainer steps after its dispatch, half
 
 A 92 s pull takes up about 15% of the window, while a lazy fetch takes well under 1%. A rare slow sandbox seldom costs its group. If each sandbox hits a slow path with probability 0.1%, eight sandboxes per group put a slow one in an estimated 0.8% of groups, and the orchestrator drops such a group only if the slow rollout also runs past the window, which rarely happens when most groups finish well inside it. The slow rollout still costs time in progress: fewer rollouts per second with a fixed cap, or more sandboxes in memory with a raised cap.
 
-I assume that most groups in our runs finish well inside the window, as they would if the standard deviation of rollout lifetimes were about 20% of their mean. If many finish close to it instead, the orchestrator drops most groups containing a stalled sandbox, and the count of groups dropped for staleness rises. We haven't measured that spread on our runs yet, so it's the next thing to check.
+I assume that most groups in our runs finish well inside the window, as they would if the standard deviation of rollout lifetimes were about 20% of their mean. If many finish close to it, the orchestrator drops most groups containing a stalled sandbox, and the count of groups dropped for staleness rises. We haven't measured that spread on our runs yet, so it's the next thing to check.
 
 That estimate assumes that sandboxes slow down independently. When the store node or a single worker VM slows down, though, every group with a sandbox waiting on it falls behind at the same time, and at ramp-up and recovery those groups can be most of the fleet.
 
@@ -208,7 +208,7 @@ Compared with runc and Firecracker, gVisor moves most of the kernel's work into 
 | Idle floor per sandbox | Near zero | 16 MiB cgroup charge for the Sentry; the gofer process is extra and not counted | A VMM plus a booted guest kernel and its page cache |
 | Effect of a kernel bug | Hits the host | Hits the Sentry; the host is exposed through the seccomp allowlists of the Sentry and gofer, and through kernel paths used by every process | Hits the guest; the host is exposed through KVM and the VMM |
 
-Sandboxes run under gVisor on its systrap platform, inside the provider VM. Tasks that need systemd, mounts, devices or kernel modules fail at create, and we don't weaken the boundary to run them.
+Sandboxes run under gVisor on its systrap platform, inside the provider VM. Tasks that need systemd, mounts, devices or kernel modules fail at create.
 
 Since the Sentry reimplements Linux, you might expect many tasks to break under gVisor, but few did. Tencent [@tencent-gvisor] compared gVisor with runc over 74,379 paired RL task runs and found compatibility gaps worth about 1.7 points of pass rate, plus races made more likely by slower syscalls. In a first compatibility run of Prime Intellect's environments under gVisor, the few setup failures had ordinary causes, such as a gated dataset. None of them came from a missing syscall. After I fixed the runtime's handling of POSIX default ACLs and the umask (these seem to be actual gVisor bugs), the affected tasks passed as they do under runc.
 
@@ -389,7 +389,7 @@ gVisor's own EROFS reader returns `ENOTSUP` for chunk-based inodes, the layout o
 
 Suppose the daemon crashes while a sandbox imports a library, and the kernel completes the read with zeros instead of an error. Python rejects source code that contains null bytes, and the dynamic loader rejects a zeroed shared library, so the import fails with a confusing error. Nothing on the platform notices: no daemon reports a failure, so the rollout isn't masked as a sandbox error and gets reward 0 as if the agent had broken something. The zeros can also stay in the page cache, where later sandboxes on that image read them too. A zeroed data file, such as a test fixture, is worse, since the tests then run to completion on wrong input. The read path has to fail closed to rule all of this out (the third requirement at the start of this section).
 
-The Linux kernel can hand a page-cache miss to a userspace daemon in several ways. Linux's network block device (NBD) [@nbd] forwards block reads over a socket to a userspace server. We compared four mechanisms, with speed measured against the Python NBD server we started with. What matters most is what a sandbox's reads do when the daemon dies:
+The Linux kernel can hand a page-cache miss to a userspace daemon in several ways. Linux's network block device (NBD) [@nbd] forwards block reads over a socket to a userspace server. We compared four mechanisms against the Python NBD server we started with, mainly on what a sandbox's reads return when the daemon dies:
 
 | Mechanism | Daemon restart | Daemon death | Evidence |
 | --- | --- | --- | --- |
@@ -424,7 +424,7 @@ Take the first `import numpy` from this image on a worker:
 4. nydusd maps the blocks to chunks and looks them up in the chunk cache, 128 GiB of cache files on the worker's local disk, shared by all per-image daemons. On a miss, nydusd fetches the compressed chunks from the store node, plus readahead. It checks each chunk against its digest before adding it to the cache.
 5. nydusd answers the NBD request. Once the kernel has filled the page cache, the Sentry copies the bytes into the guest's buffer.
 
-When any sandbox on the same image and worker reads the file again, the host kernel finds the pages in its page cache at step 3 (Section 3.4). If nydusd dies at step 4, or a chunk fails its check there, the kernel ends the read with EIO. The rollout then fails with an error we can see and mask, instead of getting a wrong reward.
+When any sandbox on the same image and worker reads the file again, the host kernel finds the pages in its page cache at step 3 (Section 3.4). If nydusd dies at step 4, or a chunk fails its check there, the kernel ends the read with EIO. The rollout then fails with an error, and we mask it.
 
 When the store node is slow, a read blocks instead of failing. In our object storage, about 2% of GETs stalled for 6 to 60 s, often again on retry, so nydusd retries a fetch for up to 270 s. We set the kernel's NBD timeout to 600 s, above that budget, because each NBD timeout permanently kills one of the device's connections. A stalled fetch then only adds latency. If the store node is down, nydusd gives up after 270 s and the read fails with EIO, after holding the sandbox's memory for almost half of the off-policy window in this post's example.
 
@@ -432,7 +432,7 @@ With lazy loading, the sandbox still waits for its image, just later and in smal
 
 ## 5. Waiting for the model
 
-A coding agent executes tool calls and then waits for the next action. For simplicity, we'll assume model waits of 15 to 25 s, as in our pressure trial. That range is a stand-in we chose for the fake model, not a measurement: real waits depend on the model, the length of its output and queueing at the inference servers (Section 2.2). Meanwhile, each sandbox holds about 0.54 GiB of memory on average. The node daemon can leave that memory where it is, or write it to disk to free RAM for other sandboxes and read it back before the agent continues, which can make the turn take longer.
+A coding agent executes tool calls and then waits for the next action. For simplicity, we'll assume model waits of 15 to 25 s, as in our pressure trial. We chose that range for the fake model. Real waits depend on the model, the length of its output and queueing at the inference servers (Section 2.2). Meanwhile, each sandbox holds about 0.54 GiB of memory on average. The node daemon can leave that memory where it is, or write it to disk to free RAM for other sandboxes and read it back before the agent continues, which can make the turn take longer.
 
 Our node daemon pauses sandboxes at every model wait and generally leaves their memory in place, swapping pages where necessary. It hibernates a sandbox only when the worker is short of memory and swap is full (Section 5.1).
 
