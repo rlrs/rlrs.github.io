@@ -7,29 +7,29 @@ series: Hurry Up and Wait
 part: 1
 ---
 
-**TL;DR:** I built a sandbox service for agent RL, custom made for our grant-funded cloud VMs, based on gVisor. We train asynchronously, so a slow sandbox does not stall the trainer, but it stays alive longer and keeps memory in use. In a fleet like ours, each second a sandbox spends on overhead means about 3 more live sandboxes holding memory, and a whole-image pull of about 90 s holds up each new rollout before its sandbox even starts. The service therefore cuts that overhead in three places. First, sandboxes read their images lazily from a deduplicated chunk store, which takes several times less space than OCI images and cuts the median wait for a sandbox's first create from 92 s to 1.3 s. Second, sandboxes pause at every model wait, meaning that their processes stop while their memory stays in RAM, resuming in milliseconds. Hibernating a sandbox instead, by writing its memory to disk, frees the RAM but takes seconds to read back. Pausing cuts the p95 wake under memory pressure from 14.2 s to 0.13 s. Third, the node daemon detects those waits from packet headers on the worker, so pausing and resuming a sandbox needs no round trip through the gateway and PostgreSQL, and a slow control plane no longer holds up every agent's next turn. This post follows a single sandbox through the service.
+**TL;DR:** I built a sandbox service for agent RL, custom made for our grant-funded cloud VMs, based on gVisor. We train asynchronously, so the trainer keeps working while a slow sandbox finishes its rollout, but that sandbox stays alive longer and keeps memory in use. In a fleet like ours, each second a sandbox spends on overhead means about 3 more live sandboxes holding memory, and each new rollout waits about 90 s for a whole-image pull before its sandbox starts. The service therefore cuts that overhead in three places. First, sandboxes read their images lazily from a deduplicated chunk store, which takes several times less space than OCI images and cuts the median wait for a sandbox's first create from 92 s to 1.3 s. Second, sandboxes pause at every model wait, meaning that their processes stop while their memory stays in RAM, resuming in milliseconds. Hibernating a sandbox instead, by writing its memory to disk, frees the RAM but takes seconds to read back. Pausing cuts the p95 wake under memory pressure from 14.2 s to 0.13 s. Third, the node daemon detects those waits from packet headers on the worker, so pausing and resuming a sandbox needs no round trip through the gateway and PostgreSQL. This post follows a single sandbox through the service.
 
 ---
 
 Over the past few months I have been scaling up post-training at [Danish Foundation Models](https://www.foundationmodels.dk/). In agentic RL, an agent attempts a task in each rollout, editing files and running tests, so every rollout needs a machine of its own: a sandbox. During a training run, thousands of sandboxes can be alive at once. For these runs we needed a sandbox service built on the virtual machines in our academic cloud environment, which we get resources on through research grants. Every decision described in this post is made around that setup. Many labs would have different requirements, but perhaps some teams building on rented VMs can recognize our constraints. I've been building the service as a single developer during those months, with a lot of help from AI coding assistants, and this is my attempt at documenting the process and the current outcomes. If there are any particularly egregious AI-generated statements in this post, please reach out to me and I will fix them. I do care and every sentence has been reviewed manually!
 
-We train asynchronously, as is standard now, and so a slow sandbox delays only its own rollout. To keep the trainer supplied, we then run more sandboxes at once, each holding memory. We also eventually discard rollouts that finish too late, together with the other rollouts in the slow group (Section 2).
+We train asynchronously, as is standard now, so new rollouts start while slow ones are still running. Keeping the trainer supplied then takes more sandboxes at once, each holding memory. We also eventually discard rollouts that finish too late, together with the other rollouts in the slow group (Section 2).
 
 We made the main design decisions under three constraints:
 
 - Our VMs lack `/dev/kvm`, the device needed by microVM runtimes such as Firecracker. Each sandbox instead runs under gVisor, a kernel in user space serving the guest's system calls (Section 3).
 - Our tasks at the time of writing reference more than 66k image names, too many for warm sandboxes per image. Instead, workers fetch each image's bytes on first read, from a chunk store holding each distinct chunk once. On 181 images, the chunk store took about 8.6 times less space than OCI layers plus their EROFS conversions. On 40 SWE-bench images, the median wait for a sandbox's first create dropped from 92 s with whole-image pulls to 1.3 s (Section 4).
-- Sandboxes spend most of their lives waiting for the model, so we pause each sandbox at every model wait and leave its memory in place. We hibernate a sandbox, writing its memory to disk, only when the worker is short of memory and swap is full. In a load test with 140 agents on one worker, sandboxes woke at a p95 of 0.13 s, against 14.2 s when they were hibernated whenever memory ran short (Section 5).
+- Sandboxes spend most of their lives waiting for the model. We pause each sandbox at every model wait and leave its memory in place. We hibernate a sandbox, writing its memory to disk, only when the worker is short of memory and swap is full. In a load test with 140 agents on one worker, sandboxes woke at a p95 of 0.13 s, against 14.2 s when they were hibernated whenever memory ran short (Section 5).
 
 Sections 1 and 2 explain why we built our own service and what sandbox overhead costs, and Sections 3 to 5 follow a single sandbox through the service.
 
 ## 1. Why we built our own sandbox service
 
-There are many commercial services selling sandboxing as a service. To name a few: Modal, E2B, Daytona. I built ours because RL rollouts differ from the workloads best served by these services (to some extent, everyone is obviously building towards being able to run many agents, but not necessarily for a training setup) and because our current grants directly grant us VMs, rather than cash to spend.
+There are many commercial services selling sandboxing as a service. To name a few: Modal, E2B, Daytona. I built ours because RL rollouts differ from the workloads best served by these services (to some extent, everyone is obviously building towards being able to run many agents, but not necessarily for a training setup) and because our current grants give us VMs rather than cash.
 
 ### 1.1 Rollouts and other sandbox workloads
 
-The table compares RL rollouts with other workloads that run in sandboxes:
+Here is how RL rollouts compare with other workloads that run in sandboxes:
 
 | Workload | Distinct images | Lifetime | Wall time spent on | Arrival pattern | Optimization target |
 | --- | --- | --- | --- | --- | --- |
@@ -60,11 +60,11 @@ The AWS rates are on-demand prices in us-east-1, and the VM rows leave out stora
 
 The last two rows show that six VMs of roughly our workers' size would run the same thousand sandboxes for about 4 to 12 times less than the hosted services charge for allocated resources. A hosted service would also cost us about $2,000 per day of training from a small budget, while our grants already cover the VMs. So we run our sandboxes on those VMs and pack them densely, since each extra sandbox on a worker lowers the cost per rollout.
 
-Our VMs also lack `/dev/kvm`, Linux's device for hardware virtualization, so Firecracker (so trendy) and the other microVM runtimes behind most hosted services fail to start on them. The provider gives us the VMs as they are: I can't change their kernel or turn on nested virtualization, but I can run any ordinary process on them. gVisor runs its kernel as such a process, so every sandbox in this post runs under gVisor (Section 3).
+Our VMs also lack `/dev/kvm`, Linux's device for hardware virtualization, so Firecracker (so trendy) and the other microVM runtimes behind most hosted services fail to start on them. The provider gives us the VMs as they are: I can't change their kernel or turn on nested virtualization, but I can run any ordinary process on them. gVisor runs its kernel as such a process. That is why every sandbox in this post runs under gVisor (Section 3).
 
 ### 1.3 The platform at a glance
 
-The figure shows the platform around the sandboxes and the three main paths the sandboxes depend on. On path 1, the orchestrator sends commands through the gateway to create sandboxes, start the agent harness in each and delete them when the rollout ends. On path 2, the harness sends the agent's model calls to the relay, where the inference side picks them up, and runs the tool calls the policy model returns inside the sandbox. On path 3, nydusd fetches each image chunk from the store node when a sandbox first reads it. In this post, Section 3 opens the sandbox itself, Section 4 follows the image bytes and Section 5 the model calls.
+The figure shows the platform around the sandboxes and the three main paths each sandbox depends on. On path 1, the orchestrator sends commands through the gateway to create sandboxes, start the agent harness in each and delete them when the rollout ends. On path 2, the harness sends the agent's model calls to the relay, where the inference side picks them up, and runs the tool calls the policy model returns inside the sandbox. On path 3, nydusd fetches each image chunk from the store node when a sandbox first reads it. In this post, Section 3 opens the sandbox itself, Section 4 follows the image bytes and Section 5 the model calls.
 
 ![The platform around a sandbox, and the three paths it depends on: commands through the gateway (1), model calls through the relay (2) and image bytes from the store node (3).](hurry-up-and-wait-part-1/01-platform.svg)
 
@@ -72,35 +72,35 @@ I modelled the sandbox lifecycle on Kimi K3's AgentEnv and most of the rest on D
 
 - **Gateways.** Gateway processes choose a worker for each new sandbox and record the sandbox's route in PostgreSQL. A gateway also signs each image's root, a small record of digests for checking fetched chunks (Section 4).
 - **Workers.** Each worker is a 64-vCPU, 192 GB cloud VM, with about 176 GiB usable. Its node daemon creates, pauses and destroys the worker's sandboxes by running a patched build of gVisor's `runsc` directly (Section 3).
-- **Store node.** The store node, another VM, serves image chunks to the workers from its full copy of the chunk store, which holds each distinct chunk once, addressed by its digest. The chunk store's permanent copy is in an Object Storage (Section 4).
+- **Store node.** The store node, another VM, serves image chunks to the workers from its full copy of the chunk store, which holds each distinct chunk once, addressed by its digest. The chunk store's permanent copy is in object storage (Section 4).
 - **Relay.** Sandboxes call the policy model through the relay, a service on the gateway VM (Section 5).
 
 For a waiting sandbox, we'll use three terms (Section 5):
 
-- **Pause.** The node daemon stops the sandbox's guest tasks with `runsc pause` and leaves its memory resident, so the sandbox resumes in about 10 ms.
+- **Pause.** The node daemon stops the sandbox's guest tasks with `runsc pause` and leaves its memory resident. The sandbox resumes in about 10 ms.
 - **Capture.** gVisor writes the sandbox's kernel state and memory, including the guest's writes to its root filesystem, to a file on local disk.
 - **Hibernate.** The node daemon has gVisor capture the sandbox's state, then stops the sandbox to free its memory. When the model's answer arrives, gVisor restores the sandbox from the capture in seconds.
 
 ## 2. What sandbox overhead costs
 
-Under asynchronous training, a slow sandbox delays only its own group. It still costs us in two ways: we keep more rollouts in progress to maintain the rate of finished rollouts, each holding memory once its sandbox starts, and we drop a group whose slowest rollout finishes too long after dispatch.
+Under asynchronous training, a slow sandbox costs us in two ways: we keep more rollouts in progress to maintain the rate of finished rollouts, each holding memory once its sandbox starts, and we drop a group whose slowest rollout finishes too long after dispatch.
 
 The inputs to the models below are measurements from our deployment.
 
 ### 2.1 Asynchronous training
 
-In synchronous RL, the trainer and most inference servers stay idle while the last rollouts of a batch finish. PipelineRL [@piche2025pipelinerl] removes that wait by running generation and training at the same time. When the trainer produces new weights, the inference servers pause briefly to load them and then continue their current sequences, so a rollout can carry tokens from several policy versions. The trainer corrects for the mix with importance weights, scaling each token's update by the ratio of its probability under the current policy to its probability under the older sampling policy.
+In synchronous RL, the trainer and most inference servers stay idle while the last rollouts of a batch finish. PipelineRL [@piche2025pipelinerl] removes that wait by running generation and training at the same time. When the trainer produces new weights, the inference servers pause briefly to load them and then continue their current sequences. A single rollout can then carry tokens from several policy versions. The trainer corrects for the mix with importance weights, scaling each token's update by the ratio of its probability under the current policy to its probability under the older sampling policy.
 
-Our trainer is built on prime-rl [@primeintellect-asyncrl], which also implements the async design. Its orchestrator, the process dispatching rollouts, batches continuously (Section 2.1.3 of the INTELLECT-3 technical report [@intellect3]): it keeps up to C rollouts in progress and starts a new one as soon as any rollout ends, so the inference servers never wait for a group to finish. A controller moves C between a minimum and a maximum we set, raising it while the inference servers' KV cache has room and lowering it as the cache fills. Sandboxes start and end with their rollouts:
+Our trainer is built on prime-rl [@primeintellect-asyncrl], which also implements the async design. Its orchestrator, the process dispatching rollouts, batches continuously (Section 2.1.3 of the INTELLECT-3 technical report [@intellect3]): it keeps up to C rollouts in progress and starts a new one as soon as any rollout ends, so the inference servers keep generating while a group's last rollouts finish. A controller moves C between a minimum and a maximum we set, raising it while the inference servers' KV cache has room and lowering it as the cache fills. Sandboxes start and end with their rollouts:
 
 1. The G rollouts of a group run the same task from the same initial state and start within seconds of each other. This post uses G = 8.
-2. A group completes when its slowest rollout finishes. Each sandbox, though, ends as soon as its own rollout finishes.
+2. A group completes when its slowest rollout finishes. Each sandbox ends as soon as its rollout finishes.
 
 The PipelineRL authors report that common RL algorithms perform worse on tokens from a policy several versions old. We bound this staleness with the `max_off_policy_steps` setting, written K in this post, which dates all rollouts of a group from the policy version current at the group's dispatch. The orchestrator cancels a group once the group can no longer finish within K steps, and drops a finished group if more than K steps have passed since its dispatch when the trainer takes the next batch. Either way, we lose the group's tokens, along with the GPU time used to generate them.
 
 This post uses K = 10, an illustrative value. The default is 8, the value used for INTELLECT-3.
 
-In the figure below, each slot gets a new rollout as soon as its rollout ends, so inference pauses only to load new weights. Groups A and B start at version 1, and their rollouts keep running across weight updates. A's last rollout ends under version 2, so A trains in step 3, two versions after its dispatch and within K. A slow sandbox create delays one of B's rollouts. B is still running when step 4 takes its batch, the last batch B could enter within K versions, so the orchestrator cancels it and discards B's finished rollouts too.
+In the figure below, each slot gets a new rollout as soon as its rollout ends, and inference pauses only to load new weights. Groups A and B start at version 1, and their rollouts keep running across weight updates. A's last rollout ends under version 2, and A trains in step 3, two versions after its dispatch and within K. A slow sandbox create delays one of B's rollouts. B is still running when step 4 takes its batch, the last batch B could enter within K versions, so the orchestrator cancels it and discards B's finished rollouts too.
 
 ![Asynchronous training with K = 3, and synchronous training below for comparison. A slow sandbox create holds up group B (red) past the off-policy limit, so B is dropped, while the other highlighted group, A, trains. Hatching marks sandbox overhead.](hurry-up-and-wait-part-1/02-async-timeline.svg)
 
@@ -129,11 +129,11 @@ $$L = \lambda W$$
 
 For the fleet, L is the number of live sandboxes and λ the rollout completion rate. W is a rollout's wall time in its sandbox, from create to release: the create, including any wait for the image, then for each turn a model wait, tool calls and a wake, the time for the node daemon to resume a sandbox paused during the wait (Section 5). The sampler, which picks tasks, calls `ensure` before dispatch to build any missing image (Section 4), so only the remaining wait counts. The sandbox overhead is the part of W added by the sandbox runtime: the create, the wakes and any slowdown in the tool times.
 
-Because the orchestrator starts a new rollout as soon as one ends, a slow rollout keeps only its own slot and sandbox busy for longer, and its groupmates' slots go to new rollouts as soon as they finish. The number of rollouts in progress is then the completion rate times the average rollout time, and nearly all of them have a live sandbox. Only those still waiting for their image don't.
+Because the orchestrator starts a new rollout as soon as one ends, a slow rollout keeps its slot and sandbox busy for longer, while its groupmates' slots go to new rollouts as soon as they finish. The number of rollouts in progress is then the completion rate times the average rollout time, and nearly all of them have a live sandbox. Only those still waiting for their image don't.
 
-When sandbox overhead makes rollouts longer, a fixed cap on rollouts in progress means fewer of them finish per second. The orchestrator's controller usually raises the cap instead. A rollout held up by its sandbox generates no tokens, which leaves room in the inference servers' KV cache, and the controller fills that room with extra rollouts. Each extra rollout brings its own sandbox, so more sandboxes hold memory at the same time. The rate holds until the cap reaches the maximum we set or the workers run out of memory. I also assume that the trainer is compute-bound. If it waits for data instead, each of its steps takes longer by about the mean overhead. Ideally this is balanced so inference throughput matches trainer throughput.
+When sandbox overhead makes rollouts longer, a fixed cap on rollouts in progress means fewer of them finish per second. The orchestrator's controller usually raises the cap instead. A rollout waiting on its sandbox generates no tokens, which leaves room in the inference servers' KV cache, and the controller fills that room with extra rollouts, each with a sandbox holding memory. The rate holds until the cap reaches the maximum we set or the workers run out of memory. I also assume that the trainer is compute-bound. If it waits for data, each of its steps takes longer by about the mean overhead. Ideally this is balanced so inference throughput matches trainer throughput.
 
-For a delay after the sandbox starts, such as a slow wake or a stalled fetch, the extra rollouts in progress times 0.54 GiB, the average we measured earlier, is an estimate of the memory they hold. A rollout waiting for an image pull has no sandbox yet and holds almost none. A pull costs time from the group's window instead (Section 2.4).
+For a delay after the sandbox starts, such as a slow wake or a stalled fetch, the extra rollouts in progress times 0.54 GiB, the average we measured earlier, is an estimate of the memory they hold. A rollout waiting for an image pull has no sandbox yet and holds almost none. A pull costs the group time from its window (Section 2.4).
 
 Our fleet gives the numbers that Sections 3 to 5 reuse:
 
@@ -148,17 +148,17 @@ These estimates run low, because they use the median pull time, while Little's l
 
 With hibernation under memory pressure, slow wakes after model waits kept about 50 extra sandboxes alive, holding about 26 GiB, against about 2 with pausing (Section 5.5). If gVisor made every tool call twice as slow, a rollout whose tools take 13% to 48% of its 300 s would last 39 to 144 s longer, and the extra sandboxes would hold 70 to 260 GiB. Shorter rollouts raise the rate and with it every bar: at 2-minute rollouts, each bar would be 2.5 times longer. The controller adds these sandboxes only while the workers have memory for them. Once memory runs out, the overhead costs rollouts per second instead.
 
-A higher cap keeps up the rate, but each rollout still lasts as long as before. If a slow rollout lasts long enough, the orchestrator still drops its whole group as too stale.
+A higher cap keeps up the rate, but each rollout still lasts as long as before. If a slow rollout lasts long enough, the orchestrator drops its whole group as too stale (Section 2.4).
 
-Creates arrive at about the rate rollouts finish, 3.3 per second, with a group's eight creates back to back and usually sharing an image. That is about half a sandbox per second on each of the six workers, far below a node daemon's maximum create rate. Bursts are harder. At the start of a run, the orchestrator grows its pool slowly, admitting at most a tenth of its cap every 5 s, but after a fault it replaces each failed rollout at once, while the affected groups' windows are already running. Refilling the fleet within 30 s takes about 10 times the steady create rate. If we lose one of the six workers, the other five have to recreate its roughly 167 sandboxes, which fit in the 880 GiB they have between them, and the store node gets the same burst of image reads.
+Creates arrive at about the rate rollouts finish, 3.3 per second, with a group's eight creates back to back and usually sharing an image. That is about half a sandbox per second on each of the six workers, far below a node daemon's maximum create rate. At the start of a run, the orchestrator grows its pool slowly, admitting at most a tenth of its cap every 5 s, but after a fault it replaces each failed rollout at once, while the affected groups' windows are already running. Refilling the fleet within 30 s takes about 10 times the steady create rate. If we lose one of the six workers, the other five have to recreate its roughly 167 sandboxes, which fit in the 880 GiB they have between them, and the store node gets the same burst of image reads.
 
 ### 2.4 Slow rollouts and dropped groups
 
 A group finishes with its slowest rollout, and the orchestrator drops it if that rollout ends more than about K trainer steps after the group's dispatch. If the trainer takes a step every 60 s (t\_step, assumed), then with K = 10 a group has a window of about 600 s, K t\_step, from its dispatch. The usable window is somewhat shorter, because a group may start partway through a trainer step and may wait for the next batch after it finishes.
 
-An average 300 s rollout finishes about 5 trainer steps after its dispatch, half of K. Whether its group fits, though, depends on the slowest of its eight rollouts, so the tail of rollout lifetimes matters more than their mean: for 99% of groups to fit, about 99.9% of rollouts have to. With lognormal lifetimes averaging 300 s and no sandbox overhead, an estimated 0.1% of groups would miss the window at a coefficient of variation (standard deviation over mean) of 0.2, 5% at 0.3 and 30% at 0.5. Agent rollouts with long turn caps can spread more than that.
+An average 300 s rollout finishes about 5 trainer steps after its dispatch, half of K. But whether its group fits depends on the slowest of its eight rollouts. The tail of rollout lifetimes matters more than their mean: for 99% of groups to fit, about 99.9% of rollouts have to. With lognormal lifetimes averaging 300 s and no sandbox overhead, an estimated 0.1% of groups would miss the window at a coefficient of variation (standard deviation over mean) of 0.2, 5% at 0.3 and 30% at 0.5. Agent rollouts with long turn caps can spread more than that.
 
-A 92 s pull takes up about 15% of the window, while a lazy fetch takes well under 1%. A rare slow sandbox seldom costs its group, though. If each sandbox hits a slow path with probability 0.1%, eight sandboxes per group put a slow one in an estimated 0.8% of groups, and the orchestrator drops such a group only if the slow rollout also runs past the window, which rarely happens when most groups finish well inside it. The slow rollout still costs time in progress: fewer rollouts per second at a fixed C, or more sandboxes in memory at a raised C.
+A 92 s pull takes up about 15% of the window, while a lazy fetch takes well under 1%. A rare slow sandbox seldom costs its group. If each sandbox hits a slow path with probability 0.1%, eight sandboxes per group put a slow one in an estimated 0.8% of groups, and the orchestrator drops such a group only if the slow rollout also runs past the window, which rarely happens when most groups finish well inside it. The slow rollout still costs time in progress: fewer rollouts per second with a fixed cap, or more sandboxes in memory with a raised cap.
 
 I assume that most groups in our runs finish well inside the window, as they would if the standard deviation of rollout lifetimes were about 20% of their mean. If many finish close to it instead, the orchestrator drops most groups containing a stalled sandbox, and the count of groups dropped for staleness rises. The spread of rollout lifetimes is therefore the first measurement to take on our runs (Section 6).
 
@@ -166,13 +166,13 @@ That estimate assumes that sandboxes slow down independently. When the store nod
 
 The trainer can use only the rollouts entering a batch within the off-policy limit. Their number per second is the goodput, and sandbox overhead reduces it in three ways:
 
-1. Overhead, including the wake after every model wait, keeps each rollout in progress longer, so fewer rollouts finish per second at a given C.
+1. Overhead, including the wake after every model wait, keeps each rollout in progress longer, so fewer rollouts finish per second at a given cap.
 2. Overhead pushes some groups' slowest rollouts past the window, and the orchestrator drops those groups.
 3. Sandbox errors lose single rollouts, because we mask a failed rollout's completion. An integration that drops the whole group instead loses G times as many.
 
 ## 3. The isolation boundary
 
-Every sandbox runs under gVisor, whose kernel runs in user space as an ordinary process on the worker. Guest programs run slower under gVisor mainly because each system call (syscall) has to be handed off to that kernel. While a sandbox is idle, the Sentry adds about 16 MiB to its memory, an estimated 3% of a real agent's average, plus the gofer process, which that figure leaves out. The larger cost is time: I measured that warm commands took about twice their native time under gVisor, and if every tool slowed down that much, the extra live sandboxes would hold 70 to 260 GiB extra memory (Section 3.3).
+Every sandbox runs under gVisor, whose kernel runs in user space as an ordinary process on the worker. Guest programs run slower under gVisor mainly because each system call (syscall) has to be handed off to that kernel. While a sandbox is idle, the Sentry adds about 16 MiB to its memory, an estimated 3% of a real agent's average, plus the gofer process, which that figure leaves out. The larger cost is time: I measured that warm commands took about twice their native time under gVisor, and if every tool slowed down that much, the extra live sandboxes would hold 70 to 260 GiB (Section 3.3).
 
 On a worker in the middle of a training run, every live sandbox runs code from the policy model, unreviewed and sometimes as root. Most of that code edits files or runs tests, but agents doing such ordinary work have still crashed host kernels (Section 3.1), taking every other sandbox on the worker down with them. A sandbox has to keep its agent away from the other agents' files and processes, and often also from the internet (Section 3.5).
 
@@ -187,7 +187,7 @@ Unfortunately, when a guest triggers a kernel bug, the host kernel can crash, ki
 
 DSec responded by running its containers inside QEMU VMs. According to the Kimi K3 report, AgentEnv moved from containers to microVMs after agents caused kernel panics and deadlocks.
 
-Most hosted sandbox services run each sandbox in a microVM under a VMM (a virtual machine monitor, such as Firecracker). The microVM's own guest kernel serves the guest's syscalls, so the host kernel handles only the guest's exits from the VM. In exchange, the host has to provide `/dev/kvm`, available only on bare metal, under nested virtualization or with a PVM host kernel. AgentEnv's PVM mode [@agentenv] uses a PVM host kernel on cloud VMs.
+Most hosted sandbox services run each sandbox in a microVM under a VMM (a virtual machine monitor, such as Firecracker). The microVM's guest kernel serves the guest's syscalls, and the host kernel handles only the guest's exits from the VM. In exchange, the host has to provide `/dev/kvm`, available only on bare metal, under nested virtualization or with a PVM host kernel. AgentEnv's PVM mode [@agentenv] uses a PVM host kernel on cloud VMs.
 
 On hosts with `/dev/kvm`, a microVM is the better choice when tasks need a real kernel, for example to run Docker or systemd or to create mounts inside the sandbox. MicroVMs also help when a group's G sandboxes should start from a prepared sandbox and share its memory copy-on-write, because gVisor lacks a copy-on-write fork across sandboxes.
 
@@ -197,9 +197,9 @@ Our VMs offer none of the ways to get `/dev/kvm`. They aren't bare metal, the pr
 
 gVisor's kernel is the Sentry, a Go program that implements Linux's system calls in user space. Every guest syscall goes to the Sentry.
 
-The Sentry holds all guest kernel state in its own memory, so gVisor can capture a whole sandbox [@gvisor-checkpoint] without CRIU, the usual tool for checkpointing Linux processes. Guest memory consists of pages of a host file charged to the sandbox's cgroup (the kernel's unit for accounting and limiting a group of processes), so the host kernel can reclaim those pages through ordinary cgroup interfaces.
+Because the Sentry holds all guest kernel state in its own memory, gVisor can capture a whole sandbox [@gvisor-checkpoint] without CRIU, the usual tool for checkpointing Linux processes. Guest memory consists of pages of a host file charged to the sandbox's cgroup (the kernel's unit for accounting and limiting a group of processes), so the host kernel can reclaim those pages through ordinary cgroup interfaces.
 
-The table compares runc, gVisor and Firecracker by their effect on the layers above the boundary.
+The three runtimes differ in what sits above the boundary:
 
 |  | Containers (runc) | User-space kernel (gVisor) | MicroVM (Firecracker) |
 | --- | --- | --- | --- |
@@ -210,7 +210,7 @@ The table compares runc, gVisor and Firecracker by their effect on the layers ab
 | Idle floor per sandbox | Near zero | 16 MiB cgroup charge for the Sentry; the gofer process is extra and not counted | A VMM plus a booted guest kernel and its page cache |
 | Effect of a kernel bug | Hits the host | Hits the Sentry; the host is exposed through the seccomp allowlists of the Sentry and gofer, and through kernel paths used by every process | Hits the guest; the host is exposed through KVM and the VMM |
 
-Sandboxes run under gVisor on its systrap platform (its mode for intercepting syscalls without ptrace or KVM), inside the provider VM. Tasks that need systemd, mounts, devices or kernel modules fail at create, so the boundary is never weakened for them.
+Sandboxes run under gVisor on its systrap platform (its mode for intercepting syscalls without ptrace or KVM), inside the provider VM. Tasks that need systemd, mounts, devices or kernel modules fail at create rather than run behind a weaker boundary.
 
 Since the Sentry reimplements Linux, you might expect many tasks to break under gVisor, but few did. Tencent [@tencent-gvisor] compared gVisor with runc over 74,379 paired RL task runs and found compatibility gaps worth about 1.7 points of pass rate, plus races made more likely by slower syscalls. In a first compatibility run of Prime Intellect's environments under gVisor, the few setup failures had ordinary causes, such as a gated dataset. None of them came from a missing syscall. After I fixed the runtime's handling of POSIX default ACLs and the umask (these seem to be actual gVisor bugs), the affected tasks passed as they do under runc.
 
@@ -230,22 +230,22 @@ The figure shows a sandbox's layers: the guest at the top, the host processes in
 
 1. Each guest address space runs in a host stub process, with a stub thread for each guest thread. The stub's seccomp filter returns `SECCOMP_RET_TRAP`, so the host kernel raises SIGSYS on the thread instead of running the call.
 2. The stub's signal handler writes the registers into memory shared with the Sentry and waits. Both sides spin on that memory before sleeping on a futex, so on idle CPUs a round trip can complete without a context switch.
-3. On x86\_64, the Sentry rewrites hot syscall sites into a jump to a stub trampoline, so later calls from a rewritten site skip the signal.
+3. On x86\_64, the Sentry rewrites hot syscall sites into a jump to a stub trampoline. Later calls from a rewritten site skip the signal.
 
 Under systrap, the guest thread hands each syscall off to the Sentry, another user-space process. gVisor's KVM platform skips the hand-off, but only on hosts with `/dev/kvm`.
 
 To size the hand-off, I timed commands in a sandbox and natively on a 48-vCPU VM, with directfs on. Warm commands took about twice the native time. In a cold `pip --version`, gVisor added about 0.2 s of the 1.1 s total, and most of the rest went to fetching the image (Section 4.4).
 
-Now assume every tool call slows down as much as the warm commands did. Tools take 13% to 48% of a rollout's 300 s in the published range (Section 2.2), so doubling their time stretches a rollout to between 339 and 444 s. Holding about 3.3 rollouts/s then takes an estimated 1,130 to 1,480 live sandboxes instead of 1,000. At 0.54 GiB each, the extra sandboxes hold at most about 70 to 260 GiB, up to about one and a half workers' usable memory.
+Now assume every tool call slows down as much as the warm commands did. Tools take 13% to 48% of a rollout's 300 s in the published range (Section 2.2). Doubling their time stretches a rollout to between 339 and 444 s. Holding about 3.3 rollouts/s then takes an estimated 1,130 to 1,480 live sandboxes instead of 1,000. At 0.54 GiB each, the extra sandboxes hold at most about 70 to 260 GiB, up to about one and a half workers' usable memory.
 
-Even at 444 s, the average rollout finishes inside the 600 s off-policy window, although a group with a slow member may not (Section 2.4). Compute-bound tools slow down less than the warm commands did, while syscall-dense tools can slow down more: Modal reports [@modal-snapshots] that `import torch` alone makes 26,000 syscalls. So the doubling is only a rough guide. Even so, tool slowdown is the largest overhead in the figure in Section 2.3, and nothing in this post reduces it. The next step is to measure how much real tools slow down under gVisor.
+Even at 444 s, the average rollout finishes inside the 600 s off-policy window, although a group with a slow member may not (Section 2.4). Compute-bound tools slow down less than the warm commands did, while syscall-dense tools can slow down more: Modal reports [@modal-snapshots] that `import torch` alone makes 26,000 syscalls. So the doubling is only a rough guide. Still, tool slowdown is the largest overhead in the figure in Section 2.3, and nothing in this post reduces it. The next step is to measure how much real tools slow down under gVisor.
 
 **The memory file.** All guest anonymous memory consists of pages of a single file, the application memory file. Upstream gVisor makes it a memfd, a file with no path in any host filesystem, which the kernel frees once the Sentry and its stubs exit. A stock checkpoint therefore copies every page out. I changed the runtime to let the node daemon create the file on a host tmpfs and donate it to the Sentry. The file then stays on the tmpfs after the Sentry exits, so the node daemon can treat guest memory as an ordinary host file:
 
 - In a capture, gVisor serializes the kernel objects and copies only the file's allocated extents to disk.
 - To thaw a paused sandbox, the node daemon reads the file from the host (Section 5).
 
-**The gofer and directfs.** The Sentry runs in an empty mount namespace, so it opens host files only through the gofer, a helper process controlling the guest's access to them. Without directfs, every open, stat and read becomes an RPC to the gofer, with a round trip per operation. With directfs [@directfs] (`--directfs`, on by default), the gofer instead donates host file descriptors to the Sentry over its socket. The Sentry then resolves and reads files itself, with `*at` syscalls relative to those descriptors. Guest reads go through the host page cache, as a runc container's reads do, so sandboxes on an image can share its pages (Section 3.4).
+**The gofer and directfs.** The Sentry runs in an empty mount namespace, so it opens host files only through the gofer, a helper process controlling the guest's access to them. Without directfs, every open, stat and read becomes an RPC to the gofer, with a round trip per operation. With directfs [@directfs] (`--directfs`, on by default), the gofer instead donates host file descriptors to the Sentry over its socket. The Sentry then resolves and reads files itself, with `*at` syscalls relative to those descriptors. Guest reads go through the host page cache, as a runc container's reads do (Section 3.4).
 
 **Netstack.** With `--network=sandbox`, the Sentry runs its own TCP/IP stack, netstack. It exchanges Ethernet frames with the host over a packet socket on the sandbox's veth (a virtual Ethernet pair linking the sandbox's network namespace to the host), so the host kernel handles only frames. Because the Sentry keeps TCP state in its own memory, every capture includes the sandbox's open connections. Netstack keeps running while `runsc pause` stops the guest's tasks, so the node daemon can pause a sandbox through a model wait with its connection to the model still open (Section 5.2).
 
@@ -254,23 +254,23 @@ Even at 444 s, the average rollout finishes inside the 600 s off-policy window, 
 - The lower layer is the host tree served by the gofer.
 - The upper layer is a Sentry tmpfs, with its pages backed by a single host file, `.gvisor.filestore.<id>`, inside the upper directory of the host overlay.
 
-The Sentry handles creates, renames and writes itself, without any host syscall. When I checked, a guest write showed up only in the filestore. The host kernel holds the filestore's data in page cache, outside the memory file, so it can reclaim the data like other file pages. Until the kernel writes the data back to disk, it charges the pages to the sandbox's memory cgroup. gVisor writes the filestore out again in every capture, since the filestore is part of the Sentry's state (Section 5.1).
+The Sentry handles creates, renames and writes itself, without any host syscall. When I checked, a guest write showed up only in the filestore. The host kernel holds the filestore's data in page cache, outside the memory file, and can reclaim it like other file pages. Until the kernel writes the data back to disk, it charges the pages to the sandbox's memory cgroup. gVisor writes the filestore out again in every capture, since the filestore is part of the Sentry's state (Section 5.1).
 
-With `--overlay2=none` instead, gVisor puts writes in the host upper directory, so host processes can read them without a checkpoint. Each guest write then becomes a host syscall. The host filesystem also has to parse file names chosen by the guest. I kept `root:self` to keep the guest's writes and file names away from the host kernel. The node daemon reads job status files from host bind mounts instead.
+With `--overlay2=none`, gVisor puts writes in the host upper directory, where host processes can read them without a checkpoint. Each guest write then becomes a host syscall. The host filesystem also has to parse file names chosen by the guest. I kept `root:self` to keep the guest's writes and file names away from the host kernel. The node daemon reads job status files from host bind mounts instead.
 
 ### 3.4 Sharing image pages between sandboxes
 
-Each sandbox has its own Sentry and gofer, so each could keep a private copy of its image's hot pages. Image memory would then grow with L, the number of live sandboxes.
+Since each sandbox has its own Sentry and gofer, each could keep a private copy of its image's hot pages. Image memory would then grow with L, the number of live sandboxes.
 
 To check, I started 32 sandboxes on a Python data-science image. Each sandbox imported numpy, pandas and scipy. Host `MemAvailable`, the kernel's estimate of memory available without swapping, fell by about 47 MiB per sandbox, of which only 0.4 MiB was page cache. The rest was Sentry-private memory and guest anonymous memory, so the image's hot pages stayed shared. I measured the sharing with host-wide counters instead of per-process RSS, because the kernel counts a shared page in the RSS of every process mapping it.
 
 You might also object that a host mount wastes memory, since gVisor can mount EROFS [@erofs], a read-only Linux filesystem image format, inside the Sentry. In the same setup, with EROFS mounted as the root inside the Sentry, host memory use fell from 47 to 29 MiB per sandbox. That saving is about 3% of a real agent's 0.54 GiB. gVisor's EROFS reader also rejects the chunk-based files in Nydus images (Section 4.3), so I kept the host mount.
 
-With directfs, sandboxes on the same image share its pages whatever the image format, so I chose the format on other grounds (Section 4.3). The host page cache still grows with each distinct image on a worker.
+Since directfs shares an image's pages whatever its format, I chose the format on other grounds (Section 4.3). The host page cache still grows with each distinct image on a worker.
 
 ### 3.5 Containment layers and guest privileges
 
-Three layers lie outside the guest's control, so they count as containment:
+Three layers lie outside the guest's control and count as containment:
 
 1. the provider VM,
 2. the host kernel, which the guest can use only through
@@ -284,7 +284,7 @@ Most tasks run without internet access, with the model relay as their only way o
 Many task images expect a VM-like Linux host, so training sandboxes run as the user the image sets, often root, with Docker's default capabilities instead of our stricter default. The sandboxes run without a user namespace or an extra OCI seccomp profile, relying on gVisor's own seccomp filters. The node daemon also guards the host interfaces exposed to a guest that may be root:
 
 - **Sandboxes connecting to host services over IPv6.** With IPv6 enabled on the host end of its veth, a sandbox can connect over link-local addresses to host services listening on `[::]`, bypassing the firewall's IPv4-only `INPUT` drop. The node daemon therefore creates each sandbox's veth pair with IPv6 disabled on both ends.
-- **Guest symlinks in host-visible directories.** A guest can plant symlinks in the bind mounts exposing guest state to the host. The node daemon opens each path there with `O_NOFOLLOW`, then checks `S_ISREG` and a size cap. When deciding whether to hibernate, the node daemon looks only at a fixed fingerprint of the job record, so nothing a root guest writes there can keep it from being hibernated.
+- **Guest symlinks in host-visible directories.** A guest can plant symlinks in the bind mounts exposing guest state to the host. The node daemon opens each path there with `O_NOFOLLOW`, then checks `S_ISREG` and a size cap. When deciding whether to hibernate, the node daemon looks only at a fixed fingerprint of the job record, so nothing a guest writes there can keep its sandbox from being hibernated.
 
 ## 4. Getting the image
 
@@ -317,18 +317,18 @@ The simplest option is for the node daemon to pull the image with Docker, unpack
 
 Most of the pulled bytes are never read (Section 2.2): the pull moved 30 to 50 MB for each MB that a rollout's first commands read. DSec saw the same thing, with eager pulls in a large burst finishing about 1.7 times later than on-demand loading.
 
-So instead, the node daemon mounts each image as a lazily loaded EROFS filesystem. Behind the mount, a reader daemon fetches each piece of a file the first time a sandbox reads it, and the sandbox can start as soon as the worker has the image's metadata. Here is the pull test again, with lazy loading:
+Instead, the node daemon mounts each image as a lazily loaded EROFS filesystem. Behind the mount, a reader daemon fetches each piece of a file the first time a sandbox reads it, and the sandbox can start as soon as the worker has the image's metadata. Here is the pull test again, with lazy loading:
 
 | Pull test, 40 SWE-bench images | p50 | p95 |
 | --- | --: | --: |
 | Docker pull | 92 s | 211 s |
 | Lazily loaded EROFS | 1.3 s | 2.4 s |
 
-At p95, the wait dropped from over 200 s to under 3 s, roughly 90 times faster on these images. The downside is that the reader daemon now fetches the rest of the image while the sandbox runs, so a slow store node can stall a running sandbox (Section 4.4).
+At p95, the wait dropped from over 200 s to under 3 s, roughly 90 times faster on these images. But the reader daemon now fetches the rest of the image while the sandbox runs, and a slow store node can make a running sandbox wait (Section 4.4).
 
 Whole-image pulls remain the simpler choice when sandboxes read most of their image and each worker runs few distinct images.
 
-The store node still has to hold every piece of every image, though. Stored as OCI layers plus their EROFS conversions, the 8,100 prebuilt images alone took about 3 TB, more than the store node's 2 TB disk.
+The store node still has to hold every piece of every image. Stored as OCI layers plus their EROFS conversions, the 8,100 prebuilt images alone took about 3 TB, more than the store node's 2 TB disk.
 
 ### 4.2 Sharing bytes across independently built images
 
@@ -357,25 +357,25 @@ We use 256 KiB chunks to match the unit of the worker's chunk cache, at the cost
 
 The comparison at the start of this section is a bit generous to the chunk store, since it counts each image twice, as OCI layers and as their EROFS conversion. A Nydus copy of the sample without dedup took about 3 times the space of the chunk store, so dedup across images accounts for a factor of about 3, and the change of format for the rest.
 
-The chart breaks the sample down by image family:
+The savings varied widely by image family:
 
 ![Storage per image family on the 181-image sample, as OCI layers plus EROFS against the chunk store.](hurry-up-and-wait-part-1/05-chunk-store.svg)
 
 Families built from a single source, such as TMax and ScaleSWE, shrank about 20 times, with each new image adding about 12 MB of unique chunks. The mixed SWE-smith/R2E/Lego/rebench family was the exception, at about 5 times and about 330 MB per new image. The prebuilt corpus shrank from 3 TB to 331 GB, well within the store node's disk.
 
-What about a corpus of 100k images? At the single-source families' 12 MB each, they would add about 1.2 TB to the bytes shared by all images. At the prebuilt corpus's average of about 41 MB, they would add about 4 TB, twice the store node's disk.
+A corpus of 100k images would add about 1.2 TB to the bytes shared by all images at the single-source families' 12 MB each, and about 4 TB, twice the store node's disk, at the prebuilt corpus's average of about 41 MB.
 
 Our store stays well below both projections, because `ensure` builds recipe images only for sampled tasks, each adding about 5 to 15 MB after dedup. After later rebuilds and evals, the store node held about 0.39 TB.
 
-> **An aside on Nydus's own chunk dictionary.** In a trial on a 181-image sample, run before the chunk index existed, Nydus stopped partway at a RAFS v6 limit, after silently writing wrong bytes into about 5% of a single image's files. It feels worth it now to check every dedup layer against its source, file by file.
+> **An aside on Nydus's own chunk dictionary.** In a trial on a 181-image sample, run before the chunk index existed, Nydus stopped partway at a RAFS v6 limit, after silently writing wrong bytes into about 5% of a single image's files. Since then, I think every dedup layer is worth checking against its source, file by file.
 
 Early on, first imports took more than twice as long after conversion. I discovered that, with `mkfs.erofs -T0`, the converter, built on erofs-utils [@erofs-utils], had set every mtime to 0, so on first import Python found every `.pyc` file out of date and recompiled them all. A first scientific package import took 3.7 s instead of 1.4 s and wrote about 26 MB into the Sentry's filestore, which gVisor writes out again in every capture (Section 3.3). The converter now keeps build-time mtimes. That changes only the bootstrap, since chunk identities come from file contents alone.
 
 ### 4.3 Choosing a lazy format under gVisor
 
-The lazy format has to keep all metadata on the worker and share bytes across independently built images. A sandbox reads metadata on every `stat`, `open` and path walk, and a Python import walks dozens of directories on the module search path before it opens a single file. With the default EROFS layout, the converter placed the metadata among the file data, and a `find / -xdev` on that layout made over a hundred remote reads. After the converter packed the metadata into a single zone with `mkfs.erofs --MZ`, the same walk makes none.
+The lazy format has to keep all metadata on the worker and share bytes across independently built images. A sandbox reads metadata on every `stat`, `open` and path walk, and a Python import walks dozens of directories on the module search path before it opens a single file. With the default EROFS layout, the converter placed the metadata among the file data, and a `find / -xdev` on that layout made over a hundred remote reads. After the converter packed the metadata into a single zone with `mkfs.erofs --MZ`, the same walk made none.
 
-The table compares the common lazy formats:
+Three families of lazy formats are in common use:
 
 | Format | Cross-image dedup | Fit under gVisor |
 | --- | --- | --- |
@@ -383,13 +383,13 @@ The table compares the common lazy formats:
 | eStargz, SOCI | None across independent builds | FUSE daemon: a userspace round trip per uncached lookup or read |
 | overlaybd | Fragile: layout differs per build | Host mount; metadata lookups become remote reads |
 
-eStargz and SOCI suit fleets with little to gain from dedup. overlaybd treats the image, the writable layer and snapshots alike as block devices, a good fit for VMs: DSec uses it for microVM writable disks. Under gVisor, the Sentry keeps guest writes in its own filestore whatever the image format. For the read-only image, I chose RAFS v6, the best of the three on dedup and on local metadata.
+eStargz and SOCI suit fleets with little to gain from dedup. overlaybd treats the image, the writable layer and snapshots alike as block devices, a good fit for VMs: DSec uses it for microVM writable disks. Under gVisor, the Sentry keeps guest writes in its filestore whatever the image format. For the read-only image, I chose RAFS v6, the best of the three on dedup and on local metadata.
 
 gVisor's own EROFS reader returns `ENOTSUP` for chunk-based inodes, the layout of every RAFS v6 regular file, so the node daemon mounts images on the host and the Sentry reads them through directfs. Behind the host mount, a userspace daemon fetches the chunks. When a fetch fails, whether the sandbox gets an error or wrong bytes depends on that daemon and how it talks to the kernel.
 
 ### 4.4 Making the reader daemon fail closed
 
-Suppose the daemon crashes while a sandbox imports a library, and the kernel completes the read with zeros instead of an error. Python rejects source code that contains null bytes, and the dynamic loader rejects a zeroed shared library, so the import fails with a confusing error. Nothing on the platform notices: no daemon reports a failure, so the rollout isn't masked as a sandbox error and gets reward 0 as if the agent had broken something. The zeros can also stay in the page cache, so later sandboxes on that image fail the same way. A zeroed data file, such as a test fixture, is worse, since the tests then run to completion on wrong input. The read path has to fail closed to rule all of this out (the third requirement at the start of this section).
+Suppose the daemon crashes while a sandbox imports a library, and the kernel completes the read with zeros instead of an error. Python rejects source code that contains null bytes, and the dynamic loader rejects a zeroed shared library, so the import fails with a confusing error. Nothing on the platform notices: no daemon reports a failure, so the rollout isn't masked as a sandbox error and gets reward 0 as if the agent had broken something. The zeros can also stay in the page cache, where later sandboxes on that image read them too. A zeroed data file, such as a test fixture, is worse, since the tests then run to completion on wrong input. The read path has to fail closed to rule all of this out (the third requirement at the start of this section).
 
 The Linux kernel can hand a page-cache miss to a userspace daemon in several ways. NBD [@nbd], the kernel's network block device, forwards block reads over a socket to a userspace server. Our first reader was a Python NBD server, the baseline in the Evidence column. The Daemon death column is the one that matters here:
 
@@ -402,7 +402,7 @@ The Linux kernel can hand a page-cache miss to a userspace daemon in several way
 
 fanotify drops out first, because after its listener died the sandbox read zeros. FUSE fails closed, but the kernel then makes an upcall to the daemon on every cold path walk, a cost I'd accept only to upgrade daemons without draining their sandboxes. fscache was the fastest reader in these tests, but upstream deprecates it, and our workers' kernel is built without `CONFIG_EROFS_FS_ONDEMAND` anyway.
 
-We use stock nydusd in NBD mode. nydusd exposes each RAFS v6 image as a block device, which the host kernel mounts as EROFS, so the kernel serves metadata from its page cache without upcalls. When nydusd died, the kernel's NBD driver failed the pending reads with EIO within about 45 ms. I also ran 64 sandboxes and killed several daemons in the middle of reads: only the sandboxes reading from those daemons failed, and the rest exited cleanly. A cold `import sys` ran about 11 times faster at the median than with the Python NBD server. Running nydusd has some costs, though:
+We use stock nydusd in NBD mode. nydusd exposes each RAFS v6 image as a block device, which the host kernel mounts as EROFS, so the kernel serves metadata from its page cache without upcalls. When nydusd died, the kernel's NBD driver failed the pending reads with EIO within about 45 ms. I also ran 64 sandboxes and killed several daemons in the middle of reads: only the sandboxes reading from those daemons failed, and the rest exited cleanly. A cold `import sys` ran about 11 times faster at the median than with the Python NBD server. Running nydusd has some costs:
 
 - Upstream marks NBD mode as experimental.
 - When a daemon dies, every sandbox reading its image fails and has to start again.
@@ -476,7 +476,7 @@ We choose to hibernate sandboxes only on a worker short of memory, because the w
 - the worker has to be emptied,
 - reclaiming paused sandboxes to swap has stalled twice in a row.
 
-If the node daemon knew how long a wait would last, it could hibernate the sandbox right away whenever the worker is short of memory and t\_w R > T F holds. It's difficult to predict how long a model will think, and so waits currently never have a hint.
+If the node daemon knew how long a wait would last, it could hibernate the sandbox right away whenever the worker is short of memory and t\_w R > T F holds. It's difficult to predict how long a model will think, so waits currently come without a hint.
 
 Under memory pressure, the node daemon instead reclaims paused sandboxes to swap, starting with the most recently paused, since the one paused longest is the likeliest to wake next.
 
@@ -494,14 +494,14 @@ A pause and a resume each took under 10 ms at the median, so pausing on every tu
 
 ### 5.3 Detecting model waits from packet headers
 
-The agent's model calls already pass through the relay, so our first design let the relay drive each pause. The relay asked the gateway to pause the sandbox when a call went out and to thaw it before delivering the answer, with the relay and the gateway each writing every step to PostgreSQL: about 20 statements and four network round trips per wait. At about 50 waits per second, that is little load for PostgreSQL. The problem is that it put the gateway and PostgreSQL on the path of every model call, so a slow or restarting gateway would stall every agent in the fleet at its next turn. Most of that work also only confirmed that a sandbox should stay as it was. The node daemon now makes the decision itself, from packet headers on the relay connection:
+The agent's model calls already pass through the relay, so our first design let the relay drive each pause. The relay asked the gateway to pause the sandbox when a call went out and to thaw it before delivering the answer, with the relay and the gateway each writing every step to PostgreSQL: about 20 statements and four network round trips per wait. At about 50 waits per second, that is little load for PostgreSQL. But this put the gateway and PostgreSQL on the path of every model call: with a slow or restarting gateway, every agent in the fleet would wait at its next turn. Most of that work also only confirmed that a sandbox should stay as it was. The node daemon now makes the decision itself, from packet headers on the relay connection:
 
 - **Observe.** The agent calls the model relay in plain HTTP/1.1 on the private network. Following an nftables rule, the kernel copies the first 64 bytes of each relay packet to an NFLOG group (the kernel's packet-logging target). The node daemon reads the copies over netlink and decides from the IPv4 and TCP headers alone, using their ports, flags and lengths.
 - **Pause.** Once 50 ms pass with no inbound data after the flow's last outbound payload, the node daemon checks the sandbox's `cpu.stat`. If the sandbox used at most 2 ms of CPU in those 50 ms, the node daemon pauses it. While an exec or another lifecycle call runs in the sandbox, the node daemon leaves it running.
 - **Thaw.** The node daemon thaws the sandbox when the NFLOG copies include the answer's first inbound data packet, a FIN or an RST. By then the paused netstack has already ACKed the data and buffered it.
 - **Confirm.** The relay commits the answer to PostgreSQL together with a fallback wake row due in 5 s, then writes the answer to the agent's socket. For up to 4 s, it then polls the socket with `TIOCOUTQ`, an ioctl returning the count of bytes still unacknowledged by the peer. When the count drops to zero, the sandbox's Sentry has acknowledged every byte, so the relay cancels the fallback row with an UPDATE. A hibernated Sentry sends no ACKs, so the count stays above zero until the row comes due and the gateway wakes the sandbox.
 
-To see whether pausing breaks TCP, I tested by delaying a 1 MB answer by 2 s. It arrived with no retransmissions or timeouts, and the thaw took 9.8 ms at the median.
+To see whether pausing breaks TCP, I delayed a 1 MB answer by 2 s. It arrived with no retransmissions or timeouts, and the thaw took 9.8 ms at the median.
 
 Under TLS 1.3, the server sends session tickets after the handshake, and in a short experiment with TLS, the node daemon mistook the tickets for the answer and thawed sandboxes early, on the first call of each connection. I kept the relay connection in plaintext, since the traffic stays on the private network and each rollout has its own relay token.
 
