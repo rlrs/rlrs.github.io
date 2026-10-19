@@ -119,6 +119,19 @@ def _footnote_previews(html_text: str) -> str:
 
 _CITE_PAT = re.compile(r"\[@([^\]]+)\]")
 
+_SVG_IMG = re.compile(r'<p><img src="([^":]+\.svg)" alt="([^"]*)" ?/?></p>')
+
+def _inline_figures(html_text: str, folder: pathlib.Path) -> str:
+    """`![caption](file.svg)` alone on a line, with the SVG next to the Markdown, becomes an inline
+    <figure>, so the drawing can use the theme's colors (an <img> can't see the page's CSS)."""
+    def sub(m: re.Match):
+        svg = folder / html.unescape(m.group(1))
+        if not svg.exists():
+            return m.group(0)
+        caption = f"<figcaption>{m.group(2)}</figcaption>" if m.group(2) else ""
+        return f"<figure class='fig'><div class='fig-scroll'>{svg.read_text('utf8').strip()}</div>{caption}</figure>"
+    return _SVG_IMG.sub(sub, html_text)
+
 
 # ----------------------------------------------------------------------------
 class Page:
@@ -231,7 +244,7 @@ class Site:
         for md in content.rglob("*.md"):
             is_post = md.parts[-2] == "posts"
             meta, body = self._split_front(md.read_text("utf8"))
-            html_body = self._md_to_html(body)
+            html_body = _inline_figures(self._md_to_html(body), md.parent)
             if meta.get("bib"):
                 html_body = self._apply_citations(html_body, md.parent / meta["bib"])
             self.pages.append(Page(md, meta, body, html_body, is_post))
@@ -275,7 +288,13 @@ class Site:
 
         Handles both “Family, Given” and “Given Family” BibTeX styles,
         removes braces, and converts all given names to initials.
+        A braced name such as `{Prime Intellect}` is an organisation and stays as written.
         """
+        raw = raw.strip()
+        if raw.startswith("{") and raw.endswith("}"):
+            return raw.strip("{}")
+        if raw == "others":
+            return "et al."
         raw = raw.replace("{", "").replace("}", "").strip()
         if "," in raw:                                   # “Family, Given …”
             fam, given = (s.strip() for s in raw.split(",", 1))
@@ -295,7 +314,10 @@ class Site:
     def _format_reference(self, entry: Dict[str, str]) -> str:
         """Very small APA-like formatter."""
         authors = self._parse_authors(entry.get("author", "Anon."))
-        authors_str = ", ".join(authors[:-1]) + f", & {authors[-1]}" if len(authors) > 1 else authors[0]
+        if authors[-1] == "et al.":
+            authors_str = ", ".join(authors[:-1]) + " et al."
+        else:
+            authors_str = ", ".join(authors[:-1]) + f", & {authors[-1]}" if len(authors) > 1 else authors[0]
         year = entry.get("year", "n.d.")
         title_raw = entry.get("title", "[Untitled]") + "."
         url = entry.get("url") or (f"https://doi.org/{entry['doi']}" if "doi" in entry else "")

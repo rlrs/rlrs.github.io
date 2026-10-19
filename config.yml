@@ -39,5 +39,4 @@ elsewhere:
     icon: huggingface
 
 # home page, top of the Writing list: posts that aren't published yet (no page, no RSS)
-upcoming:
-  - title: "Hurry Up And Wait: The Life of an RL Sandbox (Part 1)"
+upcoming: []

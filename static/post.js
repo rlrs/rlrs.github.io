@@ -36,11 +36,22 @@ if (headings.length) {
   });
   fill(top.querySelector("ol"));
   const links = fill(toc.querySelector("ol"));
+  // the sidebar lists the sections, and the subsections of the current one only
+  let section = -1;
+  const parent = headings.map((h, i) => (h.tagName === "H2" ? (section = i) : section));
   // highlight the section whose heading was passed most recently
   const update = () => {
     let cur = 0;
     headings.forEach((h, i) => { if (h.getBoundingClientRect().top < 120) cur = i; });
-    links.forEach((a, i) => a.classList.toggle("active", i === cur));
+    const open = headings[cur].tagName === "H2" ? cur : parent[cur];
+    links.forEach((a, i) => {
+      a.classList.toggle("active", i === cur);
+      a.parentElement.hidden = a.classList.contains("sub") && parent[i] !== open;
+    });
+    // a sidebar taller than the window scrolls by itself: keep the current entry in view
+    const a = links[cur], pad = 24;
+    if (a.offsetTop - pad < toc.scrollTop) toc.scrollTop = a.offsetTop - pad;
+    else if (a.offsetTop + a.offsetHeight + pad > toc.scrollTop + toc.clientHeight) toc.scrollTop = a.offsetTop + a.offsetHeight + pad - toc.clientHeight;
   };
   update();
   addEventListener("scroll", update, { passive: true });
