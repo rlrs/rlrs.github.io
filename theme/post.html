@@ -9,7 +9,7 @@
         {% if page.series | length > 1 %}<a href='#series'>Part {{ part }} of {{ page.series | length }}</a>{% endif %}
         <button class='copy-md' data-src='{{ page.md_url }}' hidden><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='9' y='9' width='12' height='12' rx='2'/><path d='M5 15V5a2 2 0 0 1 2-2h10'/></svg><span>Copy as Markdown</span></button>
       </p>
-      <h1 class='page-title'>{{ page.meta.title }}</h1>
+      <h1 class='page-title'>{{ page.meta.title | no_orphan }}</h1>
       {% if page.meta.summary %}<p class='summary'>{{ page.meta.summary }}</p>{% endif %}
       {% for a in page.attachments %}
       <a href='{{ a.url }}' class='card'>

@@ -17,12 +17,12 @@ sky:
 
 # home page, right column
 projects:
+  - title: sandboxes
+    url: https://github.com/rlrs/sandboxes
+    description: Self-hosted sandboxes for agents, evals and RL rollouts
   - title: maester
     url: https://github.com/rlrs/maester
     description: Language model training framework in modern PyTorch
-  - title: verifiers-ucloud
-    url: https://github.com/rlrs/verifiers-ucloud
-    description: UCloud sandbox runtime for RL environments built with verifiers
 
 elsewhere:
   - title: GitHub

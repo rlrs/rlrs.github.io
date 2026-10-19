@@ -6,7 +6,7 @@
   <li>
     <span class='row{{ ' has-plate' if site.sky }}'>
       {% if site.sky %}<span class='plate' data-seed='{{ u.title }}' data-developing aria-hidden='true'></span>{% endif %}
-      <span class='title'>{{ u.title }}</span>
+      <span class='title'>{{ u.title | no_orphan }}</span>
       <span class='soon'>Soon</span>
     </span>
   </li>
@@ -15,7 +15,7 @@
   <li>
     <a href='{{ p.url }}' class='row{{ ' has-plate' if site.sky }}'>
       {% if site.sky %}<span class='plate' data-seed='{{ p.meta.title }}' aria-hidden='true'></span>{% endif %}
-      <span class='title'>{{ p.meta.title }}</span>
+      <span class='title'>{{ p.meta.title | no_orphan }}</span>
       <time datetime='{{ p.date }}'>{{ p.date.strftime('%b %Y') }}</time>
     </a>
   </li>

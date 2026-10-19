@@ -186,8 +186,11 @@ class Site:
         self.env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(root / "theme")), autoescape=True)
         # expose dt for templates
         self.env.globals["dt"] = dt
-        # one-line Markdown from config.yml (tagline, now)
+        # one-line Markdown from config.yml (tagline)
         self.env.filters["md_inline"] = lambda text: markupsafe.Markup(_MD.renderInline(text or ""))
+        # titles: the last two words never split, so a wrapped title can't leave e.g. "1)" alone on a line
+        self.env.filters["no_orphan"] = lambda text: markupsafe.Markup("&nbsp;").join(
+            markupsafe.escape(part) for part in str(text or "").rsplit(" ", 1))
 
     # ---------------------------------------------------------------- config
     def _load_config(self):

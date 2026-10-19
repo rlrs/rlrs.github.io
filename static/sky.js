@@ -296,6 +296,12 @@ let view = null, drawView = null, slider = null, back = null, mark = null;
 function buildView() {
   const holder = fig.querySelector(".sky-view");
   holder.replaceChildren();
+  // on wider screens the view takes whatever height is left in the window (180–250px), so the page doesn't scroll
+  holder.style.height = "";
+  if (matchMedia("(min-width: 640px)").matches) {
+    const rest = document.documentElement.scrollHeight - holder.clientHeight;
+    holder.style.height = `${Math.round(clamp(innerHeight - rest, 180, 250))}px`;
+  }
   const w = Math.floor(holder.clientWidth), h = Math.floor(holder.clientHeight);
   if (!w || !h) return;
   view = surface(w, h, 1);  // one dot per CSS pixel (2×2 device pixels on retina)
@@ -363,11 +369,12 @@ if (reduceMotion) {
   const tick = (t) => { requestAnimationFrame(tick); if (t - last >= 1000 / 15 - 2) { last = t; render(t / 1000); } };
   requestAnimationFrame(tick);
 }
-// redraw the view when its size changes (its height follows the window's)
-const viewSize = () => (fig ? `${fig.clientWidth}x${fig.querySelector(".sky-view").clientHeight}` : "");
-let rt, lastSize = viewSize();
+// refit and redraw the view when the window changes size, and once the web font has settled the layout
+const rebuild = () => { if (fig) { buildView(); if (reduceMotion) render(performance.now() / 1000); } };
+let rt, lastSize = `${innerWidth}x${innerHeight}`;
 addEventListener("resize", () => {
   clearTimeout(rt);
-  rt = setTimeout(() => { if (fig && viewSize() !== lastSize) { lastSize = viewSize(); buildView(); if (reduceMotion) render(performance.now() / 1000); } }, 150);
+  rt = setTimeout(() => { const size = `${innerWidth}x${innerHeight}`; if (size !== lastSize) { lastSize = size; rebuild(); } }, 150);
 });
+document.fonts?.ready.then(rebuild);
 })();

@@ -122,7 +122,7 @@ main { flex: 1; }
 .list a { display: block; padding: .65rem 0; }
 .list .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1.25rem; }
 .list span.row { padding: .65rem 0; }   /* upcoming post: not a link yet */
-.list .title { font-weight: 500; color: var(--ink); text-wrap: pretty; transition: color .15s; }
+.list .title { font-weight: 500; color: var(--ink); text-wrap: balance; transition: color .15s; }
 .list a:hover .title { color: var(--accent); }
 .list .sub { display: block; font-size: .9rem; color: var(--muted); }
 .list time, .list .soon { flex-shrink: 0; font-size: .9rem; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -462,7 +462,7 @@ leaderboard-widget { display: block; }
   .tools { margin-left: auto; }
   .index { grid-template-columns: 1fr 1fr; margin-top: 9rem; }
   .js .sky { margin-top: 2.5rem; }
-  /* as tall as the window allows without scrolling (the rest of the home page is ~720px), 180–250px */
+  /* a first guess; static/sky.js then fits the view to the space left in the window (180–250px) */
   .sky-view { height: clamp(180px, calc(100vh - 720px), 250px); }
   .archive, .post-layout, .page { margin-top: 6rem; }
   .page-title { font-size: 2.75rem; }
