@@ -131,6 +131,36 @@ main { flex: 1; }
 .index { display: grid; gap: 3rem 2.5rem; align-items: start; margin-top: 6rem; }
 .index-side { display: grid; gap: 3rem; }
 
+/* ---- the sky view and the post figures (static/sky.js; only shown when JavaScript runs) ---- */
+.sky, .plate { display: none; }
+.js .sky { display: block; margin: 3rem 0 0; }
+.js .sky + .index { margin-top: 3.25rem; }
+.sky-view { height: 190px; }
+.sky-view canvas, .plate canvas { display: block; }
+.js .plate { display: block; width: 72px; height: 72px; }
+.js .list .has-plate { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 1.1rem; }
+
+/* time-of-day slider (config.yml: sky: slider: true): a hairline timeline under the view */
+.sky-time { position: relative; margin-top: .4rem; }
+.sky-time input { display: block; width: 100%; height: 18px; margin: 0; background: none; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.sky-time input::-webkit-slider-runnable-track { height: 1px; background: var(--line); }
+.sky-time input::-moz-range-track { height: 1px; background: var(--line); }
+.sky-time input::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; margin-top: -5px; border-radius: 50%; background: var(--ink); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--ink); }
+.sky-time input::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--ink); }
+.sky-time input:focus-visible { outline: none; }
+.sky-time input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--ink), 0 0 0 4px var(--accent-soft); }
+.sky-nowmark { position: absolute; top: 5px; width: 1px; height: 8px; background: var(--muted); pointer-events: none; }
+.sky-ticks { display: flex; justify-content: space-between; padding: 0 2px; font-size: .68rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sky-foot { display: flex; justify-content: flex-end; min-height: 1.2em; margin-top: .35rem; font-size: .78rem; }
+.sky-back { color: var(--muted); }
+.sky-back:hover { color: var(--ink); }
+
+/* small logos next to the Elsewhere links */
+.list .has-icon { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: .85rem; align-items: center; }
+.list .has-icon .icon { grid-row: span 2; width: 22px; height: 22px; color: var(--ink); transition: color .15s; }
+.list .has-icon .icon svg { display: block; width: 100%; height: 100%; }
+.list .has-icon:hover .icon { color: var(--accent); }
+
 /* ---- page titles ---- */
 .page-title {
   margin-top: .75rem;
@@ -431,6 +461,8 @@ leaderboard-widget { display: block; }
   .site-header { grid-template-columns: 1fr 1fr; }
   .tools { margin-left: auto; }
   .index { grid-template-columns: 1fr 1fr; margin-top: 9rem; }
+  .js .sky { margin-top: 4.5rem; }
+  .sky-view { height: 250px; }
   .archive, .post-layout, .page { margin-top: 6rem; }
   .page-title { font-size: 2.75rem; }
   .lb-table .model { max-width: none; white-space: nowrap; overflow-wrap: normal; }

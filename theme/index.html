@@ -4,7 +4,8 @@
 <ul class='list'>
   {% for u in upcoming %}
   <li>
-    <span class='row'>
+    <span class='row{{ ' has-plate' if site.sky }}'>
+      {% if site.sky %}<span class='plate' data-seed='{{ u.title }}' data-developing aria-hidden='true'></span>{% endif %}
       <span class='title'>{{ u.title }}</span>
       <span class='soon'>Soon</span>
     </span>
@@ -12,7 +13,8 @@
   {% endfor %}
   {% for p in items %}
   <li>
-    <a href='{{ p.url }}' class='row'>
+    <a href='{{ p.url }}' class='row{{ ' has-plate' if site.sky }}'>
+      {% if site.sky %}<span class='plate' data-seed='{{ p.meta.title }}' aria-hidden='true'></span>{% endif %}
       <span class='title'>{{ p.meta.title }}</span>
       <time datetime='{{ p.date }}'>{{ p.date.strftime('%b %Y') }}</time>
     </a>
@@ -27,7 +29,8 @@
   {% set external = it.url.startswith('http') and not it.url.startswith(site.base_url) %}
   {% set sub = it.description or it.note %}
   <li>
-    <a href='{{ it.url }}'>
+    <a href='{{ it.url }}'{% if it.icon %} class='has-icon'{% endif %}>
+      {% if it.icon %}<span class='icon'>{% include 'icons/' ~ it.icon ~ '.svg' %}</span>{% endif %}
       <span class='title'>{{ it.title }}{% if external %} <span aria-hidden='true'>↗</span>{% endif %}</span>
       {% if sub %}<span class='sub'>{{ sub }}</span>{% endif %}
     </a>
@@ -37,6 +40,12 @@
 {% endmacro %}
 
 {% block content %}
+{% if site.sky %}
+<script>document.documentElement.classList.add('js')</script>
+<figure class='sky' role='img' aria-label='The sky over the Øresund right now, drawn in dots'{% if site.sky.slider %} data-slider{% endif %}>
+  <div class='sky-view'></div>
+</figure>
+{% endif %}
 <div class='index'>
   <section>
     <h2 class='label'>Writing</h2>
@@ -57,4 +66,5 @@
     {% endif %}
   </div>
 </div>
+{% if site.sky %}<script src='/static/sky.js' defer></script>{% endif %}
 {% endblock %}
