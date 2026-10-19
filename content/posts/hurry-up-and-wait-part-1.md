@@ -60,7 +60,7 @@ The AWS rates are on-demand prices in us-east-1, and the VM rows leave out stora
 
 The last two rows show that six VMs of roughly our workers' size would run the same thousand sandboxes for about 4 to 12 times less than the hosted services charge for allocated resources. A hosted service would also cost us about $2,000 per day of training from a small budget, while our grants already cover the VMs. So we run our sandboxes on those VMs and pack them densely, since each extra sandbox on a worker lowers the cost per rollout.
 
-Our VMs also lack `/dev/kvm`, so Firecracker (so trendy) and the other microVM runtimes behind most hosted services fail to start on them. The provider gives us the VMs as they are: I can't change their kernel or turn on nested virtualization, but I can run any ordinary process on them. gVisor runs its kernel as such a process. That is why every sandbox in this post runs under gVisor (Section 3).
+Our VMs also lack `/dev/kvm`, so Firecracker (so trendy) and the other microVM runtimes behind most hosted services fail to start on them. The provider gives us the VMs as they are: I can't change their kernel or turn on nested virtualization, but I can run any ordinary process on them, and gVisor runs its kernel as one. So every sandbox in this post runs under gVisor (Section 3).
 
 ### 1.3 The platform at a glance
 
@@ -158,9 +158,9 @@ An average 300 s rollout finishes about 5 trainer steps after its dispatch, half
 
 A 92 s pull takes up about 15% of the window, while a lazy fetch takes well under 1%. A rare slow sandbox seldom costs its group. If each sandbox hits a slow path with probability 0.1%, eight sandboxes per group put a slow one in an estimated 0.8% of groups, and the orchestrator drops such a group only if the slow rollout also runs past the window, which rarely happens when most groups finish well inside it. The slow rollout still costs time in progress: fewer rollouts per second with a fixed cap, or more sandboxes in memory with a raised cap.
 
-I assume that most groups in our runs finish well inside the window, as they would if the standard deviation of rollout lifetimes were about 20% of their mean. If many finish close to it instead, the orchestrator drops most groups containing a stalled sandbox, and the count of groups dropped for staleness rises. The spread of rollout lifetimes is therefore the first measurement to take on our runs (Section 6).
+I assume that most groups in our runs finish well inside the window, as they would if the standard deviation of rollout lifetimes were about 20% of their mean. If many finish close to it instead, the orchestrator drops most groups containing a stalled sandbox, and the count of groups dropped for staleness rises. We haven't measured that spread on our runs yet, so it's the next thing to check.
 
-That estimate assumes that sandboxes slow down independently. When the store node or a single worker VM slows down, though, every group with a sandbox waiting on it falls behind at the same time. At ramp-up and recovery, those groups can make up most of the fleet.
+That estimate assumes that sandboxes slow down independently. When the store node or a single worker VM slows down, though, every group with a sandbox waiting on it falls behind at the same time, and at ramp-up and recovery those groups can be most of the fleet.
 
 The trainer can use only the rollouts entering a batch within the off-policy limit. Their number per second is the goodput, and sandbox overhead reduces it in three ways:
 
@@ -544,7 +544,7 @@ Much of this design follows from our constraints, and a team with different ones
 - With model waits of many minutes, hibernation starts to pay off. This would be even more efficient if we could predict how long the model will think.
 - With TLS on the connection to the model, the node daemon can't detect waits from packet headers.
 
-My estimates also assume that most of our groups finish well inside the off-policy window, so overhead mostly costs us memory. With a wider spread of rollout lifetimes, more groups would finish late, and the same overhead would drop more of them. On another setup, that spread is the first thing I would measure.
+My estimates also assume that most of our groups finish well inside the off-policy window, so overhead mostly costs us memory (Section 2.4). With a wider spread of rollout lifetimes, more groups would finish late, and the same overhead would drop more of them.
 
 That said, I'm hoping to write a part 2 of this. I want to write more about scaling the service up to thousands of sandboxes at once. At that scale, there are a bunch of new issues that haven't been discussed yet. And I want to write more on creating and curating environments for our RL training.
 
