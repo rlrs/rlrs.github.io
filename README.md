@@ -54,3 +54,6 @@ and publishes `dist/` to GitHub Pages. Files left over from deleted pages are re
   is self-hosted Site Serif (a renamed Latin subset of Charis SIL, i.e. Charter) in `static/fonts/`, SIL OFL.
   The built site loads nothing from other hosts.
   Each page also gets a generated 1200×630 link-preview card under `/og/`, drawn with the font in `theme/fonts/`.
+- **Favicon:** a sea otter traced into flat colour layers from
+  [“Enhydra lutris asleep 3”](https://commons.wikimedia.org/wiki/File:Enhydra_lutris_asleep_3.jpg) by Stan Shebs,
+  CC BY-SA 3.0; the icon (`static/img/favicon.svg`, `apple-touch-icon.png`) is CC BY-SA 3.0 too.
