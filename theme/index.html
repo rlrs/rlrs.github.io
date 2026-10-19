@@ -26,12 +26,11 @@
 {% macro link_list(items) %}
 <ul class='list'>
   {% for it in items %}
-  {% set external = it.url.startswith('http') and not it.url.startswith(site.base_url) %}
   {% set sub = it.description or it.note %}
   <li>
     <a href='{{ it.url }}'{% if it.icon %} class='has-icon'{% endif %}>
       {% if it.icon %}<span class='icon'>{% include 'icons/' ~ it.icon ~ '.svg' %}</span>{% endif %}
-      <span class='title'>{{ it.title }}{% if external %} <span aria-hidden='true'>↗</span>{% endif %}</span>
+      <span class='title'>{{ it.title }}</span>
       {% if sub %}<span class='sub'>{{ sub }}</span>{% endif %}
     </a>
   </li>
