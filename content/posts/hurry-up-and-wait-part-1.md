@@ -16,6 +16,8 @@ part: 1
 - detecting those waits from packet headers on the worker;
 - prefetching a sandbox's memory before it resumes.
 
+The code is on GitHub: [rlrs/sandboxes](https://github.com/rlrs/sandboxes).
+
 ---
 
 Over the past few months I have been scaling up post-training at [Danish Foundation Models](https://www.foundationmodels.dk/). I've been building the service as a single developer during those months, with a lot of help from AI coding assistants, and this is my attempt at documenting the process and the current outcomes. If there are any particularly egregious AI-generated statements in this post, please reach out to me and I will fix them. I do care and every sentence has been reviewed manually!
