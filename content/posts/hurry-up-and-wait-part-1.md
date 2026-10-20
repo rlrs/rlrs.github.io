@@ -9,12 +9,12 @@ part: 1
 
 **TL;DR:** I built a gVisor sandbox service for agentic RL, and then spent a long time fitting more sandboxes onto the same VMs while keeping them isolated and their rewards correct. Almost every RL task has its own image, and agents spend much of each rollout waiting for the model. This post covers how the service deals with both:
 
-- starting a sandbox in about a second by reading its image lazily;
-- fitting the image corpus on a single disk by deduplicating file content;
-- making sure a crashed reader daemon or a corrupt chunk ends a read with an error instead of wrong data;
-- pausing each sandbox at every model wait and moving its pages to swap under memory pressure;
-- detecting those waits from packet headers on the worker;
-- prefetching a sandbox's memory before it resumes.
+- Starting a sandbox in about a second by reading its image lazily.
+- Fitting the image corpus on a single disk by deduplicating file content.
+- Making sure a crashed reader daemon or a corrupt chunk ends a read with an error instead of wrong data.
+- Pausing each sandbox at every model wait and moving its pages to swap under memory pressure.
+- Detecting those waits from packet headers on the worker.
+- Prefetching a sandbox's memory before it resumes.
 
 The code is on GitHub: [rlrs/sandboxes](https://github.com/rlrs/sandboxes).
 
@@ -24,9 +24,11 @@ Over the past few months I have been scaling up post-training at [Danish Foundat
 
 ## 1. Introduction
 
-Every rollout in agentic RL needs a sandbox. The policy model writes code, the sandbox runs it, and tests inside the sandbox compute the reward. We run these sandboxes on a fixed set of cloud VMs. Any memory, disk or time a sandbox uses for something other than the agent's work means fewer rollouts on those VMs.
+Every rollout in agentic RL needs a sandbox to run the code the policy model writes. Tests in the same sandbox then compute the reward. We run these sandboxes on a fixed set of cloud VMs. Any memory, disk or time a sandbox uses for something other than the agent's work means fewer rollouts on those VMs.
 
-Code from a model in training can do anything, including crash the kernel it runs on. Each sandbox therefore needs a kernel boundary of its own. A microVM would give each sandbox its own kernel, but microVMs need `/dev/kvm` and our VMs have none. Each sandbox runs under gVisor instead. The tests decide the reward, so whenever a sandbox reads a file, it has to get the right bytes or an error.
+Code from a model in training can do anything, including crash the kernel it runs on. Each sandbox therefore needs a kernel boundary of its own. A microVM would give each sandbox its own kernel, but microVMs need `/dev/kvm` and our VMs have none. Each sandbox runs under gVisor instead.
+
+The infrastructure also has to fail visibly. When something on our side breaks, such as an image read that can't be served, the rollout should end with an error that the orchestrator can see. The orchestrator can then leave the rollout out of training, instead of scoring an infrastructure fault as the agent's mistake.
 
 Within those limits, most of the cost comes from images and from waiting. Each sandbox needs the image of its task, and for most RL environments every task has a different image. If the worker pulls the whole image before starting the sandbox, the agent waits for gigabytes of files, although its first commands read only a few percent of them. Between tool calls, agents wait for the model, leaving the sandbox idle but holding live state.
 
@@ -76,7 +78,7 @@ Tencent [@tencent-gvisor] compared gVisor with runc on paired RL task runs and f
 
 The Sentry itself uses little memory: an idle one added about 16 MiB to its sandbox's cgroup. Image reads go through the host's page cache, and sandboxes on the same image share the cached pages.
 
-The Sentry costs more in time than in memory, since each guest syscall is a round trip to it. When I timed common commands, warm commands took about twice their native time. Syscall-heavy tools slow down the most: `import torch` alone makes about 26,000 syscalls, according to Modal [@modal-snapshots]. Compute-bound tools slow down much less. Slower tools make rollouts longer, and longer rollouts keep more sandboxes alive (Section 1).
+The Sentry costs more in time than in memory, since each guest syscall is a round trip to it. When I timed common commands after a first run, they took about twice their native time. Syscall-heavy tools slow down the most: `import torch` alone makes about 26,000 syscalls, according to Modal [@modal-snapshots]. Compute-bound tools slow down much less. Slower tools make rollouts longer, and longer rollouts keep more sandboxes alive (Section 1).
 
 ### Tasks needing a full VM
 
@@ -125,7 +127,7 @@ Early on, first imports took more than twice as long after conversion. The conve
 
 ### 3.3 Making the reader daemon fail closed
 
-Suppose the daemon crashes while a sandbox imports a library, and the kernel completes the read with zeros instead of an error. Python rejects source code containing null bytes, the dynamic loader rejects a zeroed shared library, and the import fails with a confusing error. The orchestrator masks rollouts that fail with a sandbox error, which leaves them out of training. Since no daemon reported a failure, the rollout gets reward 0 as if the agent had broken something. A zeroed data file, such as a test fixture, is worse, since the tests then run to completion on wrong input.
+Suppose the daemon crashes while a sandbox imports a library, and the kernel completes the read with zeros instead of an error. Python rejects source code containing null bytes, and the dynamic loader rejects a zeroed shared library. Either way, the import fails with a confusing error. The orchestrator masks rollouts that fail with a sandbox error, which leaves them out of training. Since no daemon reported a failure, the rollout gets reward 0 as if the agent had broken something. A zeroed data file, such as a test fixture, is worse, since the tests then run to completion on wrong input.
 
 The Linux kernel can hand a page-cache miss to a userspace daemon in several ways. Linux's network block device (NBD) [@nbd] forwards block reads over a socket to a userspace server. We compared four mechanisms, mainly on whether a sandbox's reads fail or return zeros when the daemon dies:
 
@@ -142,7 +144,7 @@ We use stock nydusd in NBD mode. NBD failed closed in the comparison: when nydus
 
 ![The layers of a gVisor sandbox. Image reads come through nydusd and the shared host page cache, while guest writes stay in the Sentry.](hurry-up-and-wait-part-1/04-gvisor-layers.svg)
 
-A live nydusd can still serve wrong bytes. For example, after a fault, S3, the store node or the chunk index might return the wrong part of a pack file. nydusd is the last process to handle the bytes before the kernel, so it checks each chunk against an expected digest. The gateway signs a root digest for each image with an Ed25519 key, and a chain of digests leads from that root down to the sha256 of each chunk. The node daemon checks the signature before it starts nydusd. On a mismatch, nydusd returns EIO, just as the kernel does when nydusd dies. The orchestrator masks the failed rollout either way. S3, the store node and the chunk index can therefore stay untrusted, and we can change any of them without reworking the checks.
+A live nydusd can still serve wrong bytes. For example, after a fault, S3, the store node or the chunk index might return the wrong part of a pack file. nydusd is the last process to handle the bytes before the kernel, so it checks each chunk against an expected digest. The gateway signs a root digest for each image with an Ed25519 key, and a chain of digests leads from that root down to the sha256 of each chunk. The node daemon checks the signature before it starts nydusd. On a mismatch, nydusd returns EIO, just as the kernel does when nydusd dies. The orchestrator masks the failed rollout either way. None of these three needs to be trusted, and we can change any of them without reworking the checks.
 
 When the store node is slow, a read blocks until the fetch completes. Some GETs to our object storage stalled, often again on retry. nydusd therefore retries a fetch for up to 270 s. We set the kernel's NBD timeout above that, because each NBD timeout permanently closes one of the device's connections. A stalled fetch then adds to the agent's command time, and the sandbox holds its memory while it waits.
 
@@ -164,13 +166,13 @@ I chose to keep waiting sandboxes in memory and pause them (Section 4.2). When t
 
 ### 4.2 Pausing, reclaiming and thawing a sandbox
 
-gVisor pauses and hibernates a sandbox by itself, because the Sentry holds all of the guest's kernel state in its own memory. `runsc pause` stops the agent's processes, and the guest's memory stays in RAM. A pause and a resume each took under 10 ms at the median. Pausing alone frees no memory, but it makes swapping cheap. A paused guest uses no CPU and accesses none of its pages, so any pages the node daemon moves to swap stay there until the thaw. The Sentry keeps running the whole time, so its network stack can still receive the model's answer (Section 4.3).
+gVisor pauses and hibernates a sandbox by itself, because the Sentry holds all of the guest's kernel state in its own memory. `runsc pause` stops the agent's processes, and the guest's memory stays in RAM. A pause and a resume each took under 10 ms at the median. Pausing alone frees no memory, but it makes swapping cheap. A paused guest uses no CPU and accesses none of its pages, so any pages the node daemon moves to swap stay there until the sandbox resumes. The Sentry keeps running the whole time, so its network stack can still receive the model's answer (Section 4.3).
 
 When the worker runs low on memory, the node daemon writes to the `memory.reclaim` file of a paused sandbox's cgroup. The kernel then moves that sandbox's pages to swap on the worker's NVMe. Model waits have similar lengths, so the sandbox that has waited longest is the likeliest to wake next. The node daemon therefore reclaims the most recently paused sandboxes first.
 
 DSec [@dsec] freezes a container's cgroup before reclaiming it. Reclaim doesn't need the freeze, since the kernel reclaims from a cgroup whether or not its tasks run. For gVisor, the freeze would also stop the Sentry, but the Sentry has to keep running to acknowledge the model's answer.
 
-If the guest faults its pages back in from swap after it resumes, the thaw is slow, because each fault blocks a guest thread while the kernel reads a few pages around it. Instead, the node daemon reads the pages back before it resumes the guest. gVisor keeps all guest memory in a single file. I patched gVisor to create that file on the host, so the node daemon can read it directly with eight threads. In a prefetch test, reading the memory file this way was 4 to 6 times faster than letting the guest fault the same pages back in.
+When a resumed guest faults its pages back in from swap, it runs slowly at first, because each fault blocks a guest thread while the kernel reads a few pages around it. Instead, the node daemon reads the pages back before it resumes the guest. gVisor keeps all guest memory in a single file. I patched gVisor to create that file on the host, so the node daemon can read it directly with eight threads. In a prefetch test, reading the memory file this way was 4 to 6 times faster than letting the guest fault the same pages back in.
 
 ### 4.3 Detecting model waits from packet headers
 
@@ -195,13 +197,13 @@ When I tried TLS on the relay connection, detection broke. Right after the hands
 
 ### 4.4 Pausing against hibernating under memory pressure
 
-In a load test, 140 synthetic agents on one worker went through eight model waits each. Together, they used more memory than the worker had. In one arm, the node daemon paused the sandboxes, reclaimed them to swap and prefetched at the thaw. In the other, it kept waiting sandboxes resident and hibernated them whenever the worker ran short of memory, even for waits it would otherwise keep paused.
+In a load test, 140 synthetic agents on one worker each went through eight model waits. Together, they needed more memory than the worker had. I ran the test twice. In the first run, the node daemon paused each waiting sandbox and moved its pages to swap when memory ran short. Before a sandbox resumed, the node daemon read its pages back from the host (Section 4.2). In the second run, it kept waiting sandboxes running and hibernated them whenever the worker ran short of memory.
 
-![Wake time per model wait in the 140-agent pressure trial, pausing against hibernating.](hurry-up-and-wait-part-1/08-wake-times.svg)
+![Time to resume after each model wait in the 140-agent load test, pausing against hibernating.](hurry-up-and-wait-part-1/08-wake-times.svg)
 
-At p95, a wake took 14.2 s in the hibernating arm and 0.13 s in the pausing arm. The median wake was about the same in both arms. The waits that ended hibernated made up the gap at p95.
+At p95, a sandbox took 14.2 s to resume in the hibernating run and 0.13 s in the pausing run. The median was about the same in both runs. The gap at p95 came from the waits where the sandbox had been hibernated.
 
-By Little's law (Section 1), the slower wakes of the hibernating arm would keep an estimated 48 more sandboxes live in our training runs. Together, those sandboxes would hold about 26 GiB.
+By Little's law (Section 1), the slower resumes with hibernation would keep an estimated 48 more sandboxes alive during our training. Together, those sandboxes would hold about 26 GiB.
 
 ![Extra live sandboxes, and the memory they hold, caused by slow wakes and by slower tools.](hurry-up-and-wait-part-1/03-overhead-memory.svg)
 
@@ -209,7 +211,7 @@ Hibernation is the better choice for waits longer than about five minutes (Secti
 
 ## 5. Open work and next steps
 
-This post covered the optimizations I found most interesting to write about. With lazy image reads, the median first create dropped from about a minute and a half to about a second. With pausing, the p95 wake under memory pressure dropped from 14 s to about a tenth of a second. The service is still a work in progress, though, and there are plenty of rough edges:
+This post covered the optimizations I found most interesting to write about. With lazy image reads, the median time to start a sandbox dropped from about a minute and a half to about a second. With pausing, the p95 time for a waiting sandbox to resume under memory pressure dropped from 14 s to about a tenth of a second. The service is still a work in progress, though, and there are plenty of rough edges:
 
 - Image reads are done through nydusd's NBD mode, which is marked experimental.
 - Each image on a worker is served by a single nydusd, so if it crashes, every rollout reading that image on the worker fails.
