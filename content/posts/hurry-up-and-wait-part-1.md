@@ -50,7 +50,7 @@ The sandbox service runs on a gateway VM and a set of worker VMs. Each sandbox d
 
 ![The platform around a sandbox, and the three paths it depends on: commands through the gateway (1), model calls through the relay (2) and image bytes from the store node (3).](hurry-up-and-wait-part-1/01-platform.svg)
 
-The rest of the post covers my solutions to the issues I encountered while building our sandbox service. Section 2 covers isolation: gVisor runs on these VMs but slows down syscall-heavy tools. Section 3 is about images: the node daemon reads them lazily from a deduplicated store, which moves fetches into the middle of the agent's run. Section 4 is about memory: the node daemon pauses each sandbox while it waits for the model, and moves its pages to swap when the worker runs short. Section 5 lists the trade-offs and what comes next.
+The rest of the post covers my solutions to the issues I encountered while building our sandbox service. Section 2 covers isolation: gVisor runs on these VMs but slows down syscall-heavy tools. Section 3 is about images: the node daemon reads them lazily from a deduplicated store, which moves fetches into the middle of the agent's run. Section 4 is about memory: the node daemon pauses each sandbox while it waits for the model, and moves its pages to swap when the worker runs short. Section 5 covers open work and what comes next.
 
 ## 2. Isolation under gVisor
 
@@ -58,7 +58,7 @@ An agent in a training run executes whatever the policy model writes, sometimes 
 
 The usual answer is a microVM per sandbox. Each sandbox gets its own guest kernel, and the host handles only the VM's exits. DSec and Kimi K3's AgentEnv [@kimik3] both moved their sandboxes into VMs after agents crashed kernels. A microVM needs `/dev/kvm` on the host, which means bare metal, nested virtualization or a host kernel built for it. Our VMs have none of these, and I can't change their kernel.
 
-gVisor requires none of that. Its kernel, the Sentry, is a Go program that implements Linux system calls in user space and runs as an ordinary process on the host. On gVisor's systrap platform, the host kernel traps each of the guest's syscalls and hands it to the Sentry. The Sentry in turn makes a small set of host syscalls, and a seccomp filter[^seccomp] blocks all others.
+gVisor requires none of that. Its kernel, the Sentry, is a Go program that implements Linux system calls in user space and runs as an ordinary process on the host. On gVisor's systrap platform, the host kernel traps each of the guest's syscalls and hands it to the Sentry. The Sentry in turn makes a small set of host syscalls, and a seccomp filter blocks all others.
 
 |  | Containers (runc) | gVisor | MicroVM (Firecracker) |
 | --- | --- | --- | --- |
@@ -74,13 +74,13 @@ Tencent [@tencent-gvisor] compared gVisor with runc on paired RL task runs and f
 
 ### Overhead
 
-The Sentry itself uses little memory: an idle one added about 16 MiB to its sandbox's cgroup[^cgroup]. Image reads go through the host's page cache[^pagecache], and sandboxes on the same image share the cached pages.
+The Sentry itself uses little memory: an idle one added about 16 MiB to its sandbox's cgroup. Image reads go through the host's page cache, and sandboxes on the same image share the cached pages.
 
 The Sentry costs more in time than in memory, since each guest syscall is a round trip to it. When I timed common commands, warm commands took about twice their native time. Syscall-heavy tools slow down the most: `import torch` alone makes about 26,000 syscalls, according to Modal [@modal-snapshots]. Compute-bound tools slow down much less. Slower tools make rollouts longer, and longer rollouts keep more sandboxes alive (Section 1).
 
 ### Tasks needing a full VM
 
-gVisor runs most tasks, including Docker inside a sandbox. Docker needs extra runsc flags, though, and those flags loosen the sandbox's network isolation. Some tasks still need a full VM, for example to load kernel modules, use devices or run systemd. A microVM gives them a real kernel. DSec [@dsec] runs microVMs alongside its containers. MicroVMs also let the sandboxes of a group start from a single prepared VM and share its memory copy-on-write. gVisor can't share memory that way across sandboxes.
+gVisor runs most tasks. Docker can also run inside a gVisor sandbox, but only with extra runsc flags, and those flags loosen the sandbox's network isolation. We don't support it for now. Some tasks still need a full VM, for example to load kernel modules, use devices or run systemd. A microVM gives them a real kernel. DSec [@dsec] runs microVMs alongside its containers. MicroVMs also let the sandboxes of a group start from a single prepared VM and share its memory copy-on-write. gVisor can't share memory that way across sandboxes.
 
 ## 3. Getting the image
 
@@ -90,7 +90,7 @@ The orchestrator sends the rollouts of a group to a worker. That worker rarely h
 
 The simplest option is for the node daemon to pull the image with Docker, unpack it and start the sandbox. In a pull test on 40 SWE-bench images, the median sandbox waited about 90 s for its first successful create. A group is complete only when its slowest rollout finishes. A slow create delays the whole group, and its rollouts are staler by the time the trainer gets them.
 
-Most of the pulled bytes were never read: Docker moved 30 to 50 MB for each MB read by a rollout's first commands. Instead, the node daemon mounts each image lazily, as an EROFS[^erofs] filesystem. Behind the mount, a reader daemon fetches each piece of a file the first time a sandbox reads it. The sandbox can start as soon as the worker has the image's metadata. The first create went from about a minute and a half to about a second:
+Most of the pulled bytes were never read: Docker moved 30 to 50 MB for each MB read by a rollout's first commands. Instead, the node daemon mounts each image lazily, as an EROFS filesystem. Behind the mount, a reader daemon fetches each piece of a file the first time a sandbox reads it. The sandbox can start as soon as the worker has the image's metadata. The first create went from about a minute and a half to about a second:
 
 | Pull test, 40 SWE-bench images | p50 | p95 |
 | --- | --: | --: |
@@ -207,11 +207,11 @@ By Little's law (Section 1), the slower wakes of the hibernating arm would keep 
 
 Hibernation is the better choice for waits longer than about five minutes (Section 4.1). If model calls came with an estimate of their length, the node daemon could hibernate the long ones right away.
 
-## 5. Trade-offs and next steps
+## 5. Open work and next steps
 
 Lazy image reads and pausing cut the two longest delays in a rollout. On SWE-bench images, the median first create went from 92 s to 1.3 s, and under memory pressure, the p95 wake went from 14.2 s to 0.13 s.
 
-The design comes with costs:
+The service is still a work in progress, and parts of the design have rough edges:
 
 - nydusd's NBD mode is marked experimental upstream.
 - When a per-image daemon dies, every sandbox reading that image fails and has to start over.
@@ -219,13 +219,8 @@ The design comes with costs:
 - Header detection needs the relay connection in plaintext.
 - If a client of the gateway polled a sandbox's logs every few seconds, the sandbox would keep running through every model wait (Section 4.3).
 
-MicroVMs suit environments needing a full VM, for example to load kernel modules or run systemd (Section 2). For everything else, gVisor has been really nice to work with. Whole-image pulls suit workers with few distinct images (Section 3), and hibernation suits waits of many minutes (Section 4.4).
+Environments that load kernel modules or run systemd need a (micro)VM (Section 2). For everything else, gVisor has been really nice to work with.
 
-Beyond the warm-command timings in Section 2, I haven't yet measured how much real agent tools slow down under gVisor. By the Little's law estimate at the end of Section 4.4, that slowdown holds more memory than slow wakes did. It's the next thing I'll measure.
+Plenty of other features would be fun to look into: group forks from a warm sandbox, time-traveling workspaces, tree-search rollouts, syscall monitoring, tamper-proof grading, secret-injecting proxies, egress allow-lists, rollout replay, wait-length prediction, cache warming, memory deduplication, GPU sandboxes and microVM workers. I'll pick up the ones our training ends up needing.
 
-I'm hoping to write a part 2 of this, about scaling the service up to thousands of sandboxes at once, where a bunch of new issues come up, and about creating and curating environments for our RL training.
-
-[^seccomp]: seccomp is a kernel filter listing the system calls a process may make.
-[^cgroup]: A cgroup is the kernel's unit for counting and limiting the resources of a group of processes.
-[^pagecache]: The page cache is the kernel's in-memory copy of recently read files.
-[^erofs]: EROFS is a compressed, read-only filesystem in the Linux kernel.
+In part 2, I'll write about running thousands of sandboxes at once. Much of that is already in the code but didn't fit here, like moving parked sandboxes between workers and keeping every model call durable through crashes. Creating and curating environments for our RL training will get its own post.
