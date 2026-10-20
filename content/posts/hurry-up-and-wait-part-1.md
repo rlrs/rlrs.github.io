@@ -209,18 +209,20 @@ Hibernation is the better choice for waits longer than about five minutes (Secti
 
 ## 5. Open work and next steps
 
-Lazy image reads and pausing cut the two longest delays in a rollout. On SWE-bench images, the median first create went from 92 s to 1.3 s, and under memory pressure, the p95 wake went from 14.2 s to 0.13 s.
+This post covered the optimizations I found most interesting to write about. With lazy image reads, the median first create dropped from about a minute and a half to about a second. With pausing, the p95 wake under memory pressure dropped from 14 s to about a tenth of a second. The service is still a work in progress, though, and there are plenty of rough edges:
 
-The service is still a work in progress, and parts of the design have rough edges:
+- Image reads are done through nydusd's NBD mode, which is marked experimental.
+- Each image on a worker is served by a single nydusd, so if it crashes, every rollout reading that image on the worker fails.
+- nydusd's readahead fetches two to four times more bytes than sandboxes actually read, which puts extra load on the store node.
+- If object storage goes down, reads of chunks the store node doesn't have yet will stall until it's back.
+- Hibernating a sandbox after large writes still takes tens of seconds, since the checkpoint grows with everything the guest wrote.
+- Detecting model waits from packet headers only works when the relay connection is in plaintext (Section 4.3).
+- Commands sent through the gateway keep a sandbox from pausing, so a client polling logs every few seconds would keep it awake through every model wait (Section 4.3).
 
-- nydusd's NBD mode is marked experimental upstream.
-- When a per-image daemon dies, every sandbox reading that image fails and has to start over.
-- With readahead, nydusd fetched two to four times the bytes the sandbox read, which puts more load on the store node.
-- Header detection needs the relay connection in plaintext.
-- If a client of the gateway polled a sandbox's logs every few seconds, the sandbox would keep running through every model wait (Section 4.3).
+The code is also halfway through a rewrite, so it's messier than I'd like in places.
 
 Environments that load kernel modules or run systemd need a (micro)VM (Section 2). For everything else, gVisor has been really nice to work with.
 
-Plenty of other features would be fun to look into: group forks from a warm sandbox, time-traveling workspaces, tree-search rollouts, syscall monitoring, tamper-proof grading, secret-injecting proxies, egress allow-lists, rollout replay, wait-length prediction, cache warming, memory deduplication, GPU sandboxes and microVM workers. I'll pick up the ones our training ends up needing.
+Some examples of things that would be fun to look into: [forking a sandbox](https://github.com/deeplethe/forkd) after setup or mid-rollout, [time-traveling workspaces](https://arxiv.org/abs/2605.22781), [syscall monitoring](https://gvisor.dev/docs/user_guide/runtimemonitor/), tamper-proof grading, [secret-injecting proxies](https://developers.cloudflare.com/changelog/post/2026-04-13-sandbox-outbound-workers-tls-auth/), egress allow-lists, [rollout replay](https://pypi.org/project/agentrr/), wait-length prediction, cache warming, memory deduplication, [GPU sandboxes](https://gvisor.dev/docs/user_guide/gpu/) and [microVM workers](https://primeintellect.ai/blog/prime-vm-sandbox).
 
-In part 2, I'll write about running thousands of sandboxes at once. Much of that is already in the code but didn't fit here, like moving parked sandboxes between workers and keeping every model call durable through crashes. Creating and curating environments for our RL training will get its own post.
+In part 2, I'll write about running thousands of sandboxes at once. Much of that is already in the code but didn't fit here, like moving parked sandboxes between workers and keeping every model call durable through crashes. I'll also write a separate post about creating and curating environments for our RL training.
